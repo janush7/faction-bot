@@ -58,6 +58,93 @@ module.exports = {
         await handleAdminButton(interaction, client);
         return;
       }
+      // EVENT SIGNUP BUTTONS
+if (interaction.isButton() && interaction.customId.startsWith('event_')) {
+  const Event = require('../models/Event');
+  const buildEventEmbed = require('../utils/eventEmbed');
+
+  const [_, action, eventId] = interaction.customId.split('_');
+  const userId = interaction.user.id;
+
+  const eventDoc = await Event.findOne({ eventId });
+  if (!eventDoc) {
+    return interaction.reply({ content: '❌ Event nie istnieje.', ephemeral: true });
+  }
+
+  // sprawdzamy role
+  const member = await interaction.guild.members.fetch(userId);
+  const allowed = member.roles.cache.some(r =>
+    ['Team Rep', 'Streamer'].includes(r.name)
+  );
+
+  if (!allowed) {
+    return interaction.reply({
+      content: '❌ Nie masz uprawnień do zapisów.',
+      ephemeral: true
+    });
+  }
+
+  // WYPISANIE
+  if (action === 'leave') {
+    for (const cls of Object.keys(eventDoc.classes)) {
+      eventDoc.classes[cls].members = eventDoc.classes[cls].members.filter(id => id !== userId);
+      eventDoc.classes[cls].queue = eventDoc.classes[cls].queue.filter(id => id !== userId);
+    }
+
+    // auto-promocja
+    for (const cls of Object.keys(eventDoc.classes)) {
+      const c = eventDoc.classes[cls];
+      if (c.members.length < c.limit && c.queue.length > 0) {
+        const promoted = c.queue.shift();
+        c.members.push(promoted);
+      }
+    }
+
+    await eventDoc.save();
+
+    const embed = buildEventEmbed(eventDoc);
+    const msg = await interaction.channel.messages.fetch(eventDoc.messageId);
+    await msg.edit({ embeds: [embed] });
+
+    return interaction.reply({ content: '❌ Wypisano.', ephemeral: true });
+  }
+
+  // ZAPISANIE
+  const cls = eventDoc.classes[action];
+  if (!cls) {
+    return interaction.reply({ content: '❌ Nieznana klasa.', ephemeral: true });
+  }
+
+  // sprawdzamy czy user już jest zapisany
+  for (const c of Object.values(eventDoc.classes)) {
+    if (c.members.includes(userId) || c.queue.includes(userId)) {
+      return interaction.reply({
+        content: '❌ Jesteś już zapisany do eventu.',
+        ephemeral: true
+      });
+    }
+  }
+
+  // jeśli jest miejsce → members
+  if (cls.members.length < cls.limit) {
+    cls.members.push(userId);
+  } else {
+    // jeśli nie ma → kolejka
+    cls.queue.push(userId);
+  }
+
+  await eventDoc.save();
+
+  const embed = buildEventEmbed(eventDoc);
+  const msg = await interaction.channel.messages.fetch(eventDoc.messageId);
+  await msg.edit({ embeds: [embed] });
+
+  return interaction.reply({
+    content: '✅ Zapisano!',
+    ephemeral: true
+  });
+}
+
     } catch (error) {
       logger.error('Interaction error:', error);
       if (!interaction.replied && !interaction.deferred) {
