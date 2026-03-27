@@ -10,8 +10,10 @@ function createFactionEmbed() {
       'Good luck, and see you on the server!'
     )
     .setColor([1, 19, 39])
-    .setThumbnail('https://i.imgur.com/8ZyRVhj.png');
-}function createFactionChangeEmbed(memberId, faction) {
+       .setThumbnail('https://i.imgur.com/8ZyRVhj.png');
+}
+
+function createFactionChangeEmbed(memberId, faction) {
   const factionName = faction === 'allies' ? '🔵 Allies' : '🔴 Axis';
   
   return new EmbedBuilder()
