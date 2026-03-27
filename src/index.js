@@ -19,7 +19,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
   ]
 });
 
@@ -27,12 +28,9 @@ const client = new Client({
 require('./handlers/commandHandler')(client);
 require('./handlers/eventHandler')(client);
 
-// ===== LOAD SCHEDULE SERVICE =====
-const ScheduleService = require('./services/scheduleService');
-
 // ===== GLOBAL ERROR HANDLERS =====
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', reason);
+  logger.error('Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
@@ -40,16 +38,24 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// ===== START SCHEDULE WHEN READY =====
-client.once('ready', () => {
-  const scheduleService = new ScheduleService(client);
-  scheduleService.start();
-});
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-  .then(() => console.log('✅ Połączono z MongoDB'))
-  .catch(err => console.error('❌ Błąd MongoDB:', err));
-// ===== LOGIN =====
-client.login(process.env.TOKEN);
+// ===== ASYNC STARTUP FUNCTION =====
+async function startBot() {
+  try {
+    // Connect to MongoDB FIRST
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    logger.success('Connected to MongoDB');
+
+    // THEN login to Discord
+    await client.login(process.env.TOKEN);
+    logger.success('Bot logged in to Discord');
+  } catch (error) {
+    logger.error('Failed to start bot:', error);
+    process.exit(1);
+  }
+}
+
+// Start the bot
+startBot();
