@@ -1,5 +1,5 @@
 require('dotenv').config();
-
+const mongoose = require('mongoose');
 const { Client, GatewayIntentBits } = require('discord.js');
 const logger = require('./utils/logger');
 const { REQUIRED_ENV_VARS } = require('./config/constants');
@@ -45,6 +45,11 @@ client.once('ready', () => {
   const scheduleService = new ScheduleService(client);
   scheduleService.start();
 });
-
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+  .then(() => console.log('✅ Połączono z MongoDB'))
+  .catch(err => console.error('❌ Błąd MongoDB:', err));
 // ===== LOGIN =====
 client.login(process.env.TOKEN);
