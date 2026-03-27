@@ -1,9 +1,12 @@
 require('dotenv').config();
-// ===== DEBUG: Check if .env is loaded =====
-console.log('DEBUG: MONGO_URI =', process.env.MONGO_URI);
-console.log('DEBUG: TOKEN =', process.env.TOKEN ? 'SET' : 'MISSING');
-console.log('DEBUG: All ENV vars:', process.env);
-// ===== END DEBUG =====
+const mongoose = require('mongoose');
+const { Client, GatewayIntentBits } = require('discord.js');
+const logger = require('./utils/logger');
+const { REQUIRED_ENV_VARS } = require('./config/constants');
+
+// ===== DEBUG =====
+console.log('MONGO_URI:', process.env.MONGO_URI);
+// ================
 const mongoose = require('mongoose');
 const { Client, GatewayIntentBits } = require('discord.js');
 const logger = require('./utils/logger');
