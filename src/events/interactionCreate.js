@@ -1,268 +1,267 @@
-const { Events, PermissionsBitField } = require('discord.js');
+const Event = require('../models/Event');
+const buildEventEmbed = require('../utils/eventEmbed');
 const logger = require('../utils/logger');
-const RoleService = require('../services/roleService');
-const LogService = require('../services/logService');
-const { ADMIN_ACTIONS } = require('../config/constants');
-const securityService = require('../services/securityService');
-const { createErrorEmbed, createSuccessEmbed, createAdminPanelEmbed } = require('../utils/embeds');
-const { createAdminPanelButtons } = require('../utils/buttons');
+const { REQUIRED_ROLES_FOR_EVENT } = require('../config/constants');
 
 module.exports = {
-  name: Events.InteractionCreate,
-  async execute(interaction, client) {
+  name: 'interactionCreate',
+  async execute(interaction) {
+    // Handle button clicks for event signup
+    if (!interaction.isButton()) return;
+
+    const buttonId = interaction.customId;
+
+    // Check if this is an event signup button
+    if (!buttonId.startsWith('event_signup_')) return;
+
     try {
-      if (!interaction.guild || interaction.guild.id !== process.env.MAIN_GUILD_ID) {
-        return;
+      // Parse button ID: event_signup_{eventId}_{action/className}
+      const parts = buttonId.split('_');
+      const action = parts[parts.length - 1]; // 'commander', 'artillery', 'leave', etc.
+      const eventId = parts.slice(2, -1).join('_'); // Everything in between
+
+      // Fetch event from database
+      const event = await Event.findOne({ eventId });
+      
+      if (!event) {
+        return await interaction.reply({
+          content: '❌ Event not found',
+          ephemeral: true
+        });
       }
 
-    if (interaction.isChatInputCommand()) {
-  const command = client.commands.get(interaction.commandName);
-  if (!command) {
-    logger.warn(`Command ${interaction.commandName} not found`);
-    return;
-  }
+      const userId = interaction.user.id;
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
 
-  // FEATURE 1: Check command cooldown
-  const cooldown = securityService.isCommandOnCooldown(interaction.user.id, interaction.commandName);
-  if (cooldown) {
-    return interaction.reply({
-      embeds: [createErrorEmbed('Command Cooldown', `Please wait ${cooldown} second(s) before using this command again.`)],
-      ephemeral: true
-    });
-  }
+      if (!member) {
+        return await interaction.reply({
+          content: '❌ Could not find you in this server',
+          ephemeral: true
+        });
+      }
 
-  try {
-    await command.execute(interaction, client);
-        } catch (error) {
-          logger.error(`Error executing command ${interaction.commandName}:`, error);
-          const reply = {
-            embeds: [createErrorEmbed('Command Error', 'An error occurred while executing this command.')],
-            ephemeral: true
-          };
+      // ===== HANDLE LEAVE =====
+      if (action === 'leave') {
+        let leftFrom = null;
 
-          if (interaction.replied || interaction.deferred) {
-            await interaction.followUp(reply).catch(() => {});
-          } else {
-            await interaction.reply(reply).catch(() => {});
+        // Search all classes for this user
+        for (const [className, classData] of Object.entries(event.classes)) {
+          // Check if in members
+          const memberIndex = classData.members.indexOf(userId);
+          if (memberIndex > -1) {
+            classData.members.splice(memberIndex, 1);
+            leftFrom = className;
+
+            // Promote first from queue
+            if (classData.queue.length > 0) {
+              const promotedUserId = classData.queue.shift();
+              classData.members.push(promotedUserId);
+
+              // Notify promoted user
+              try {
+                const promotedUser = await interaction.client.users.fetch(promotedUserId);
+                await promotedUser.send(
+                  `✅ You have been promoted from the queue for **${className}** in event **${event.eventName}**!`
+                ).catch(() => {
+                  logger.warn(`Could not DM user ${promotedUserId}`);
+                });
+              } catch (error) {
+                logger.warn(`Could not notify promoted user: ${error.message}`);
+              }
+            }
+
+            break;
+          }
+
+          // Check if in queue
+          const queueIndex = classData.queue.indexOf(userId);
+          if (queueIndex > -1) {
+            classData.queue.splice(queueIndex, 1);
+            leftFrom = className;
+            break;
           }
         }
+
+        // Save changes
+        await event.save();
+
+        // Update embed message
+        await updateEventMessage(interaction, event);
+
+        // Reply to user
+        if (leftFrom) {
+          await interaction.reply({
+            content: `✅ You have left the **${leftFrom}** class`,
+            ephemeral: true
+          });
+        } else {
+          await interaction.reply({
+            content: '⚠️ You were not signed up for any class',
+            ephemeral: true
+          });
+        }
+
+        logger.success(`User ${interaction.user.tag} left ${leftFrom || 'unknown class'} in event ${eventId}`);
         return;
       }
 
-      if (interaction.isButton() && ['allies', 'axis'].includes(interaction.customId)) {
-        await handleFactionButton(interaction, client);
-        return;
+      // ===== HANDLE SIGNUP =====
+      const className = action;
+
+      // Validate class exists
+      if (!event.classes[className]) {
+        return await interaction.reply({
+          content: '❌ Invalid class',
+          ephemeral: true
+        });
       }
 
-      if (interaction.isButton() && interaction.customId.startsWith('admin_')) {
-        await handleAdminButton(interaction, client);
-        return;
+      // CHECK 1: Verify user has required role
+      const hasRequiredRole = member.roles.cache.some(role => 
+        REQUIRED_ROLES_FOR_EVENT.includes(role.name)
+      );
+
+      if (!hasRequiredRole) {
+        const requiredRoles = REQUIRED_ROLES_FOR_EVENT.join('** or **');
+        return await interaction.reply({
+          content: `❌ You need the **${requiredRoles}** role to sign up for events`,
+          ephemeral: true
+        });
       }
-      // EVENT SIGNUP BUTTONS
-if (interaction.isButton() && interaction.customId.startsWith('event_')) {
-  const Event = require('../models/Event');
-  const buildEventEmbed = require('../utils/eventEmbed');
 
-  const [_, action, eventId] = interaction.customId.split('_');
-  const userId = interaction.user.id;
-
-  const eventDoc = await Event.findOne({ eventId });
-  if (!eventDoc) {
-    return interaction.reply({ content: '❌ Event nie istnieje.', ephemeral: true });
-  }
-
-  // sprawdzamy role
-  const member = await interaction.guild.members.fetch(userId);
-  const allowed = member.roles.cache.some(r =>
-    ['Team Rep', 'Streamer'].includes(r.name)
-  );
-
-  if (!allowed) {
-    return interaction.reply({
-      content: '❌ Nie masz uprawnień do zapisów.',
-      ephemeral: true
-    });
-  }
-
-  // WYPISANIE
-  if (action === 'leave') {
-    for (const cls of Object.keys(eventDoc.classes)) {
-      eventDoc.classes[cls].members = eventDoc.classes[cls].members.filter(id => id !== userId);
-      eventDoc.classes[cls].queue = eventDoc.classes[cls].queue.filter(id => id !== userId);
-    }
-
-    // auto-promocja
-    for (const cls of Object.keys(eventDoc.classes)) {
-      const c = eventDoc.classes[cls];
-      if (c.members.length < c.limit && c.queue.length > 0) {
-        const promoted = c.queue.shift();
-        c.members.push(promoted);
+      // CHECK 2: Already signed up to this class?
+      if (event.classes[className].members.includes(userId) || 
+          event.classes[className].queue.includes(userId)) {
+        return await interaction.reply({
+          content: `⚠️ You are already signed up for **${className}** in this event`,
+          ephemeral: true
+        });
       }
-    }
 
-    await eventDoc.save();
+      // CHECK 3: Already signed up to ANY class in this event?
+      let alreadySignedClass = null;
+      for (const [checkClass, classData] of Object.entries(event.classes)) {
+        if (checkClass !== className && 
+            (classData.members.includes(userId) || classData.queue.includes(userId))) {
+          alreadySignedClass = checkClass;
+          break;
+        }
+      }
 
-    const embed = buildEventEmbed(eventDoc);
-    const msg = await interaction.channel.messages.fetch(eventDoc.messageId);
-    await msg.edit({ embeds: [embed] });
+      if (alreadySignedClass) {
+        return await interaction.reply({
+          content: `⚠️ You are already signed up for **${alreadySignedClass}**. There is no limit on teams - you can create a new event signup!`,
+          ephemeral: true
+        });
+      }
 
-    return interaction.reply({ content: '❌ Wypisano.', ephemeral: true });
-  }
+      // ===== ACCEPT SIGNUP =====
+      const classData = event.classes[className];
 
-  // ZAPISANIE
-  const cls = eventDoc.classes[action];
-  if (!cls) {
-    return interaction.reply({ content: '❌ Nieznana klasa.', ephemeral: true });
-  }
+      if (classData.members.length < classData.limit) {
+        // Add to members
+        classData.members.push(userId);
 
-  // sprawdzamy czy user już jest zapisany
-  for (const c of Object.values(eventDoc.classes)) {
-    if (c.members.includes(userId) || c.queue.includes(userId)) {
-      return interaction.reply({
-        content: '❌ Jesteś już zapisany do eventu.',
-        ephemeral: true
-      });
-    }
-  }
+        await event.save();
+        await updateEventMessage(interaction, event);
 
-  // jeśli jest miejsce → members
-  if (cls.members.length < cls.limit) {
-    cls.members.push(userId);
-  } else {
-    // jeśli nie ma → kolejka
-    cls.queue.push(userId);
-  }
+        await interaction.reply({
+          content: `✅ You have been signed up for **${className}**!`,
+          ephemeral: true
+        });
 
-  await eventDoc.save();
+        logger.success(`User ${interaction.user.tag} signed up for ${className}`);
+      } else {
+        // Add to queue
+        classData.queue.push(userId);
 
-  const embed = buildEventEmbed(eventDoc);
-  const msg = await interaction.channel.messages.fetch(eventDoc.messageId);
-  await msg.edit({ embeds: [embed] });
+        await event.save();
+        await updateEventMessage(interaction, event);
 
-  return interaction.reply({
-    content: '✅ Zapisano!',
-    ephemeral: true
-  });
-}
+        const queuePosition = classData.queue.indexOf(userId);
+
+        await interaction.reply({
+          content: 
+            `⏳ The **${className}** class is full!\n` +
+            `You have been added to the queue at position **#${queuePosition}**\n` +
+            `You will be automatically promoted when a spot opens up.`,
+          ephemeral: true
+        });
+
+        logger.info(`User ${interaction.user.tag} queued for ${className}`);
+      }
 
     } catch (error) {
-      logger.error('Interaction error:', error);
-      if (!interaction.replied && !interaction.deferred) {
+      logger.error('Error processing event signup:', error);
+      
+      try {
         await interaction.reply({
-          embeds: [createErrorEmbed('Error', 'An unexpected error occurred.')],
+          content: '❌ An error occurred while processing your request',
           ephemeral: true
-        }).catch(() => {});
+        });
+      } catch (e) {
+        logger.error('Could not send error reply:', e);
       }
     }
   }
 };
 
-async function handleFactionButton(interaction, client) {
+// Helper function to update the event embed message
+async function updateEventMessage(interaction, event) {
   try {
-    await interaction.deferUpdate();
+    const channel = await interaction.client.channels.fetch(event.channelId);
+    const message = await channel.messages.fetch(event.messageId);
+    
+    const buildEventEmbed = require('../utils/eventEmbed');
+    const embed = buildEventEmbed(event);
 
-    const roleService = new RoleService(client);
-    const logService = new LogService(client);
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-    await roleService.assignFactionRole(interaction.member, interaction.customId);
-    await logService.logFactionChange(interaction.guild, interaction.member.id, interaction.customId);
+    const row1 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_commander`)
+          .setLabel('🧭 Commander')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_artillery`)
+          .setLabel('💥 Artillery')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_infantry`)
+          .setLabel('🪖 Infantry')
+          .setStyle(ButtonStyle.Primary)
+      );
 
-    logger.success(`${interaction.user.tag} switched to ${interaction.customId}`);
+    const row2 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_recon`)
+          .setLabel('🎯 Recon')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_tank`)
+          .setLabel('🛡️ Tank')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_streamer`)
+          .setLabel('📺 Streamer')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+    const row3 = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event_signup_${event.eventId}_leave`)
+          .setLabel('❌ Leave')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+    await message.edit({
+      embeds: [embed],
+      components: [row1, row2, row3]
+    });
   } catch (error) {
-    logger.error('Faction button error:', error);
-    await interaction.followUp({
-      embeds: [createErrorEmbed('Role Assignment Failed', 'Could not assign your faction role. Try again later.')],
-      ephemeral: true
-    }).catch(() => {});
-  }
-}
-
-async function handleAdminButton(interaction, client) {
-  try {
-    if (!ADMIN_ACTIONS.includes(interaction.customId)) {
-      return interaction.reply({
-        embeds: [createErrorEmbed('Invalid Action', 'This admin action is not recognized.')],
-        ephemeral: true
-      });
-    }
-
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({
-        embeds: [createErrorEmbed('Permission Denied', 'You must be an administrator to use the admin panel.')],
-        ephemeral: true
-      });
-    }
-
-    if (interaction.message.interaction?.user.id !== interaction.user.id) {
-      return interaction.reply({
-        embeds: [createErrorEmbed('Access Denied', 'This panel belongs to another administrator.')],
-        ephemeral: true
-      });
-    }
-
-    const roleService = new RoleService(client);
-    const logService = new LogService(client);
-
-    if (interaction.customId === 'admin_reset') {
-      await interaction.deferReply({ ephemeral: true });
-      const removed = await roleService.resetAllFactions();
-      return interaction.editReply({
-        embeds: [createSuccessEmbed('Roles Reset', `Removed ${removed.allies} allies and ${removed.axis} axis members.`)]
-      });
-    }
-
-    if (interaction.customId === 'admin_reload') {
-      await interaction.deferReply({ ephemeral: true });
-      const { createFactionEmbed } = require('../utils/embeds');
-      const { createFactionButtons } = require('../utils/buttons');
-
-      try {
-        const channel = await client.channels.fetch(process.env.CHANNEL_ID);
-        const messages = await channel.messages.fetch({ limit: 20 });
-        const botMessages = messages.filter(m => m.author.id === client.user.id);
-
-        for (const msg of botMessages.values()) {
-          await msg.delete().catch(() => {});
-        }
-
-        await channel.send({
-          embeds: [createFactionEmbed()],
-          components: [createFactionButtons()]
-        });
-
-        return interaction.editReply({
-          embeds: [createSuccessEmbed('Embed Reloaded', 'Faction selection embed has been resent.')]
-        });
-      } catch (error) {
-        logger.error('Reload embed error:', error);
-        return interaction.editReply({
-          embeds: [createErrorEmbed('Reload Failed', 'Could not reload the faction embed.')]
-        });
-      }
-    }
-
-    if (interaction.customId === 'admin_clearlogs') {
-      await interaction.deferReply({ ephemeral: true });
-      try {
-        const cleared = await logService.clearLogs(interaction.guild);
-        return interaction.editReply({
-          embeds: [createSuccessEmbed('Logs Cleared', `Deleted ${cleared} log messages.`)]
-        });
-      } catch (error) {
-        logger.error('Clear logs error:', error);
-        return interaction.editReply({
-          embeds: [createErrorEmbed('Clear Failed', 'Could not clear the logs.')]
-        });
-      }
-    }
-
-  } catch (error) {
-    logger.error('Admin button error:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        embeds: [createErrorEmbed('Error', 'An error occurred processing your request.')],
-        ephemeral: true
-      }).catch(() => {});
-    }
+    logger.error('Could not update event message:', error);
   }
 }
