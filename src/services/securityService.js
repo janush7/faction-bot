@@ -5,7 +5,7 @@ class SecurityService {
     this.commandCooldowns = new Map();
     this.factionChangeCooldowns = new Map();
     this.COMMAND_COOLDOWN = 5000; // 5 seconds
-    this.FACTION_COOLDOWN = 3600000; // 1 hour
+    this.FACTION_COOLDOWN = 10000; // 10 seconds
   }
 
   // ===== FEATURE 1: COMMAND COOLDOWN =====
