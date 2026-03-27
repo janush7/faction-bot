@@ -23,7 +23,7 @@ class RoleService {
     // FEATURE 1: Check cooldown
     const cooldown = securityService.isFactionChangeCooldown(member.id);
     if (cooldown) {
-      const error = `You must wait ${cooldown} hour(s) before changing faction again`;
+      const error = `You must wait ${cooldown} second(s) before changing faction again`;
       logger.warn(`Faction cooldown triggered for ${member.user.tag}: ${error}`);
       throw new Error(error);
     }
