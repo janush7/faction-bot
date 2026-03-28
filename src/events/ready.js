@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const path = require('path');
 const logger = require('../utils/logger');
 const emojiState = require('../utils/emojiState');
+const { startScheduler } = require('../utils/scheduler');
 
 module.exports = {
   name: Events.ClientReady,
@@ -14,6 +15,8 @@ module.exports = {
     if (guild) {
       await ensureEmojis(guild);
     }
+
+    startScheduler(client);
   }
 };
 
