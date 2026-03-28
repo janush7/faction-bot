@@ -1,16 +1,14 @@
 const { EmbedBuilder } = require('discord.js');
 
-function createFactionEmbed() {
-  return new EmbedBuilder()
-    .setTitle('⚔️ Choose Your Side!')
-    .setDescription('Join the **Allies** or the **Axis** — pick your faction and enter the battlefield!')
-    .setColor(0x2f3136)
-    .addFields(
-      { name: '🔵 Allies', value: 'Fight for freedom and democracy', inline: true },
-      { name: '🔴 Axis', value: 'Fight for power and glory', inline: true }
-    )
-    .setFooter({ text: 'You can only be in one faction at a time' })
-    .setTimestamp();
+function createFactionEmbed(thumbnailUrl = null) {
+  const embed = new EmbedBuilder()
+    .setTitle('Choose your side!')
+    .setDescription("Choose the side you'll be playing on by clicking one of the buttons below. After selecting a side, you'll gain access to the channels where the SL briefings will take place. Good luck, and see you on the server!")
+    .setColor(0x011327);
+
+  if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+
+  return embed;
 }
 
 function createSuccessEmbed(title, description) {

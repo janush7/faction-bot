@@ -5,13 +5,11 @@ function createFactionButtons() {
     new ButtonBuilder()
       .setCustomId('allies')
       .setLabel('Allies')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🔵'),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('axis')
       .setLabel('Axis')
       .setStyle(ButtonStyle.Danger)
-      .setEmoji('🔴')
   );
 }
 
