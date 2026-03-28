@@ -1,15 +1,7 @@
-# Faction Bot 🎖️
+# Faction Bot
 
-A Discord bot for managing faction events — sign-ups, team balancing, scheduling, and admin controls.
-
-## Features
-
-- Create & manage Allies / Axis faction events
-- Role-based sign-up with queue system
-- Automated event reminders via scheduler
-- Secure admin panel (create, delete, reset events)
-- MongoDB persistence
-- Structured logging
+A Discord bot for managing faction events — sign-ups, class queues, and role management.  
+Events are persisted to a local JSON file (`data/events.json`), so **no database is required**.
 
 ---
 
@@ -17,43 +9,18 @@ A Discord bot for managing faction events — sign-ups, team balancing, scheduli
 
 ### Prerequisites
 
-| Tool | Version |
-|------|---------|
-| Node.js | ≥ 18 |
-| MongoDB | ≥ 6 |
-| Discord App | Bot token required |
+- Node.js ≥ 18
+- A Discord bot application with a token
 
-### 1. Clone the repo
+### Setup
 
 ```bash
 git clone https://github.com/janush7/faction-bot.git
 cd faction-bot
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
-```
-
-### 3. Configure environment variables
-
-```bash
-cp .env.example .env
-```
-
-Fill in your values — see [Environment Variables](#environment-variables) below.
-
-### 4. Register slash commands
-
-```bash
+cp .env.example .env   # fill in your values
 node deploy-commands.js
-```
-
-### 5. Start the bot
-
-```bash
-node src/index.js
+npm start
 ```
 
 ---
@@ -61,63 +28,68 @@ node src/index.js
 ## Docker
 
 ```bash
-# Copy and fill in your .env
-cp .env.example .env
-
-# Build & start
-docker compose up -d
+docker-compose up -d
 ```
+
+Event data is persisted to `./data/events.json` on your host via the volume mount.
 
 ---
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `DISCORD_TOKEN` | Bot token from Discord Developer Portal |
-| `CLIENT_ID` | Your bot's application ID |
-| `GUILD_ID` | The Discord server ID |
-| `MONGO_URI` | MongoDB connection string |
-| `LOG_CHANNEL_ID` | Channel ID for bot logs |
-| `ADMIN_ROLE_ID` | Role ID for admin commands |
-| `ALLIES_ROLE_ID` | Role ID for Allies faction |
-| `AXIS_ROLE_ID` | Role ID for Axis faction |
-| `FACTION_COOLDOWN` | Cooldown in seconds between faction switches |
+| Variable           | Description                          |
+|--------------------|--------------------------------------|
+| `TOKEN`            | Discord bot token                    |
+| `CLIENT_ID`        | Discord application client ID        |
+| `GUILD_ID`         | Main guild ID (for command deploy)   |
+| `MAIN_GUILD_ID`    | Guild ID used at runtime             |
+| `CHANNEL_ID`       | Default event channel ID             |
+| `ADMIN_LOG_CHANNEL`| Admin log channel ID                 |
+| `ALLIES_ROLE`      | Role ID for Allies faction           |
+| `AXIS_ROLE`        | Role ID for Axis faction             |
 
 ---
 
 ## Project Structure
 
 ```
-faction-bot/
-├── src/
-│   ├── commands/
-│   │   ├── admin/          # Admin commands (create-event, delete-event, panel)
-│   │   └── info/           # Info commands (ping)
-│   ├── events/             # Discord event handlers (ready, interactionCreate)
-│   ├── handlers/           # Command & event auto-loaders
-│   ├── models/             # Mongoose schemas
-│   ├── services/           # Business logic (roles, scheduling, security, logs)
-│   ├── utils/              # Embeds, buttons, logger, error helpers
-│   ├── config/             # Constants
-│   └── index.js            # Entry point
-├── deploy-commands.js      # Slash command registration script
-├── Dockerfile
-├── docker-compose.yml
-└── .env.example
+src/
+├── commands/
+│   ├── admin/       # create-event, delete-event, panel
+│   └── info/        # ping
+├── config/          # constants
+├── events/          # Discord event listeners
+├── handlers/        # command & event loader
+├── services/        # roleService, scheduleService, securityService, logService
+├── store/
+│   └── eventStore.js  # JSON file persistence (replaces MongoDB)
+└── utils/           # embeds, buttons, logger
+data/
+└── events.json      # auto-created at runtime (gitignored)
 ```
 
 ---
 
-## Contributing
+## Commands
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Commit your changes
-4. Open a pull request
+| Command          | Description                          | Permission    |
+|------------------|--------------------------------------|---------------|
+| `/create-event`  | Create a new faction sign-up event   | Administrator |
+| `/delete-event`  | Delete an existing event             | Administrator |
+| `/panel`         | Open the admin control panel         | Administrator |
+| `/ping`          | Check bot latency                    | Everyone      |
 
 ---
 
-## License
+## Event Classes & Limits
 
-MIT
+| Class      | Limit |
+|------------|-------|
+| Commander  | 2     |
+| Artillery  | 2     |
+| Infantry   | 12    |
+| Recon      | 2     |
+| Tank       | 6     |
+| Streamer   | 1     |
+
+When a class is full, users are added to a queue and automatically promoted when a slot opens.

@@ -1,8 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const Event = require('../../models/Event');
-const { createEventEmbed } = require('../../utils/eventEmbed');
+const eventStore = require('../../store/eventStore');
+const buildEventEmbed = require('../../utils/eventEmbed');
 const { createActionButtons } = require('../../utils/buttons');
-const { createErrorEmbed } = require('../../utils/errorEmbed');
+const { createErrorEmbed } = require('../../utils/embeds');
 const logger = require('../../utils/logger');
 
 module.exports = {
@@ -17,16 +17,10 @@ module.exports = {
       option.setName('description').setDescription('Event description').setRequired(true).setMaxLength(1000)
     )
     .addStringOption((option) =>
-      option
-        .setName('date')
-        .setDescription('Event date (YYYY-MM-DD)')
-        .setRequired(true)
+      option.setName('date').setDescription('Event date (YYYY-MM-DD)').setRequired(true)
     )
     .addStringOption((option) =>
-      option
-        .setName('time')
-        .setDescription('Event time in UTC (HH:MM)')
-        .setRequired(true)
+      option.setName('time').setDescription('Event time in UTC (HH:MM)').setRequired(true)
     )
     .addIntegerOption((option) =>
       option
@@ -80,32 +74,29 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const event = new Event({
+      const event = eventStore.create({
         title,
         description,
-        date: eventDate,
+        date: eventDate.toISOString(),
         maxParticipants,
         createdBy: interaction.user.id,
-        allies: [],
-        axis: [],
-        queue: [],
+        guildId: interaction.guild.id,
       });
 
-      await event.save();
-
-      const embed = createEventEmbed(event);
-      const buttons = createActionButtons(event._id);
+      const embed = buildEventEmbed(event);
+      const buttons = createActionButtons(event.eventId);
 
       const message = await interaction.editReply({
         embeds: [embed],
-        components: [buttons],
+        components: buttons,
       });
 
+      // Store Discord message/channel IDs back into the event
       event.messageId = message.id;
       event.channelId = message.channelId;
-      await event.save();
+      eventStore.persist();
 
-      logger.info(`Event created: "${title}" by ${interaction.user.tag}`);
+      logger.info(`Event created: "${title}" by ${interaction.user.tag} (ID: ${event.eventId})`);
     } catch (error) {
       logger.error('Error creating event:', error);
       await interaction.editReply({
