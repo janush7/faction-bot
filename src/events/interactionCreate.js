@@ -28,8 +28,18 @@ module.exports = {
 
     // ── Modal Submits ───────────────────────────────────────────────────────
     if (interaction.isModalSubmit()) {
-      if (interaction.customId === 'lineup_times_modal') {
-        return await handleTimesModal(interaction);
+      try {
+        if (interaction.customId === 'lineup_times_modal') {
+          return await handleTimesModal(interaction);
+        }
+      } catch (error) {
+        logger.error('Error handling modal submit:', error);
+        const reply = { content: '❌ An error occurred while saving times.', ephemeral: true };
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(reply).catch(() => {});
+        } else {
+          await interaction.reply(reply).catch(() => {});
+        }
       }
       return;
     }
