@@ -1,4 +1,4 @@
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embeds');
 const { createFactionButtons } = require('../utils/buttons');
@@ -64,6 +64,17 @@ module.exports = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+async function sendLog(client, embed) {
+  const logChannelId = process.env.ADMIN_LOG_CHANNEL;
+  if (!logChannelId) return;
+  try {
+    const channel = await client.channels.fetch(logChannelId);
+    if (channel?.isTextBased()) await channel.send({ embeds: [embed] });
+  } catch (err) {
+    logger.warn(`Could not send log to admin channel: ${err.message}`);
+  }
+}
+
 async function handleFactionSelection(interaction, faction) {
   const alliesRoleId = process.env.ALLIES_ROLE;
   const axisRoleId  = process.env.AXIS_ROLE;
@@ -72,6 +83,7 @@ async function handleFactionSelection(interaction, faction) {
   const selectedRoleId = faction === 'allies' ? alliesRoleId : axisRoleId;
   const oppositeRoleId = faction === 'allies' ? axisRoleId  : alliesRoleId;
   const factionLabel   = faction === 'allies' ? '🔵 Allies' : '🔴 Axis';
+  const factionColor   = faction === 'allies' ? 0x3b82f6 : 0xef4444;
 
   if (!selectedRoleId) {
     return interaction.reply({
@@ -89,7 +101,8 @@ async function handleFactionSelection(interaction, faction) {
   }
 
   // Remove opposite role first
-  if (oppositeRoleId && member.roles.cache.has(oppositeRoleId)) {
+  const switched = oppositeRoleId && member.roles.cache.has(oppositeRoleId);
+  if (switched) {
     await member.roles.remove(oppositeRoleId).catch(e =>
       logger.warn(`Could not remove opposite role from ${interaction.user.tag}: ${e.message}`)
     );
@@ -99,6 +112,20 @@ async function handleFactionSelection(interaction, faction) {
   await member.roles.add(selectedRoleId);
 
   logger.info(`${interaction.user.tag} joined ${factionLabel}`);
+
+  // Log to admin channel
+  const logEmbed = new EmbedBuilder()
+    .setColor(factionColor)
+    .setTitle(`${factionLabel} — Faction Selected`)
+    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+    .addFields(
+      { name: '👤 User', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+      { name: '🏳️ Faction', value: factionLabel, inline: true },
+      { name: '🔄 Switched', value: switched ? 'Yes' : 'No', inline: true }
+    )
+    .setTimestamp();
+
+  await sendLog(interaction.client, logEmbed);
 
   return interaction.reply({
     content: `✅ You have joined **${factionLabel}**! Good luck on the battlefield!`,
@@ -130,6 +157,17 @@ async function handleAdminReset(interaction) {
 
   logger.info(`${interaction.user.tag} reset faction roles for ${count} member(s)`);
 
+  const logEmbed = new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('🔁 Manual Faction Reset')
+    .addFields(
+      { name: '👤 Admin', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+      { name: '✅ Roles Removed', value: `${count} member(s)`, inline: true }
+    )
+    .setTimestamp();
+
+  await sendLog(interaction.client, logEmbed);
+
   return interaction.editReply({
     embeds: [createSuccessEmbed('Roles Reset', `Removed faction roles from **${count}** member(s).`)]
   });
@@ -158,6 +196,17 @@ async function handleAdminReload(interaction) {
   });
 
   logger.info(`${interaction.user.tag} reloaded faction embed in #${channel.name}`);
+
+  const logEmbed = new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('🔄 Embed Reloaded')
+    .addFields(
+      { name: '👤 Admin', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+      { name: '📌 Channel', value: `<#${channelId}>`, inline: true }
+    )
+    .setTimestamp();
+
+  await sendLog(interaction.client, logEmbed);
 
   return interaction.editReply({
     embeds: [createSuccessEmbed('Embed Reloaded', `Faction selection embed posted in <#${channelId}>.`)]
