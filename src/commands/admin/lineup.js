@@ -38,22 +38,22 @@ function getNextWednesdayTimestamps() {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('lineup')
-    .setDescription('Wyślij lineup na kanał')
+    .setDescription('Post the lineup to the channel')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addAttachmentOption(option =>
       option
-        .setName('zdjecie')
-        .setDescription('Zdjęcie ze składem')
+        .setName('image')
+        .setDescription('Lineup image')
         .setRequired(true)
     ),
 
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
-    const attachment = interaction.options.getAttachment('zdjecie');
+    const attachment = interaction.options.getAttachment('image');
 
     if (!attachment.contentType?.startsWith('image/')) {
-      return interaction.editReply({ content: '❌ Plik musi być obrazkiem (PNG, JPG itp.)' });
+      return interaction.editReply({ content: '❌ File must be an image (PNG, JPG, etc.)' });
     }
 
     const lineupChannelId = process.env.LINEUP_CHANNEL;
@@ -62,7 +62,7 @@ module.exports = {
       : interaction.channel;
 
     if (!channel) {
-      return interaction.editReply({ content: '❌ Nie znaleziono kanału lineupów. Sprawdź `LINEUP_CHANNEL` w `.env`.' });
+      return interaction.editReply({ content: '❌ Lineup channel not found. Check `LINEUP_CHANNEL` in `.env`.' });
     }
 
     const { matchUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
@@ -70,8 +70,8 @@ module.exports = {
     const embed = new EmbedBuilder()
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
-        { name: 'SL Briefing', value: `<t:${matchUnix}:t>`, inline: true },
-        { name: 'Game Start', value: `<t:${startUnix}:t>`, inline: true },
+        { name: 'SL Briefing',     value: `<t:${matchUnix}:t>`, inline: true },
+        { name: 'Game Start',      value: `<t:${startUnix}:t>`, inline: true },
       )
       .setImage('attachment://lineup.png')
       .setFooter({ text: `Midweek Frontline – Lineup – ${dateLabel}` })
@@ -87,8 +87,8 @@ module.exports = {
       : null;
     if (logChannel) {
       const logEmbed = new EmbedBuilder()
-        .setTitle('📋 Lineup wysłany')
-        .setDescription(`Lineup wysłany na ${channel}`)
+        .setTitle('📋 Lineup Posted')
+        .setDescription(`Lineup posted to ${channel}`)
         .addFields({ name: 'Admin', value: `${interaction.user}`, inline: true })
         .setColor(0x5865f2)
         .setTimestamp();
@@ -96,6 +96,6 @@ module.exports = {
     }
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
-    await interaction.editReply({ content: `✅ Lineup wysłany na ${channel}!` });
+    await interaction.editReply({ content: `✅ Lineup posted to ${channel}!` });
   },
 };
