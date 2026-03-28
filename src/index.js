@@ -3,7 +3,6 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const logger = require('./utils/logger');
 const { REQUIRED_ENV_VARS } = require('./config/constants');
 
-// Validate env vars
 const missing = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
 if (missing.length > 0) {
   logger.error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -14,7 +13,6 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
   ]
 });
 
