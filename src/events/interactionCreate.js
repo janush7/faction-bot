@@ -190,26 +190,39 @@ async function handleAdminReload(interaction) {
     });
   }
 
+  // Delete all existing messages in the faction channel
+  let deleted = 0;
+  let fetched;
+  do {
+    fetched = await channel.messages.fetch({ limit: 100 });
+    if (fetched.size === 0) break;
+    const result = await channel.bulkDelete(fetched, true).catch(() => null);
+    if (result) deleted += result.size;
+    else break;
+  } while (fetched.size >= 2);
+
+  // Post fresh embed
   await channel.send({
     embeds: [createFactionEmbed()],
     components: [createFactionButtons()]
   });
 
-  logger.info(`${interaction.user.tag} reloaded faction embed in #${channel.name}`);
+  logger.info(`${interaction.user.tag} reloaded faction embed in #${channel.name} (deleted ${deleted} message(s))`);
 
   const logEmbed = new EmbedBuilder()
     .setColor(0x011327)
     .setTitle('🔄 Embed Reloaded')
     .addFields(
-      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+      { name: '👤 Admin',          value: `<@${interaction.user.id}>`, inline: true },
+      { name: '📌 Channel',        value: `<#${channelId}>`,           inline: true },
+      { name: '🗑️ Msgs Deleted',  value: `${deleted}`,                inline: true }
     )
     .setTimestamp();
 
   await sendLog(interaction.client, logEmbed);
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Embed Reloaded', `Faction selection embed posted in <#${channelId}>.`)]
+    embeds: [createSuccessEmbed('Embed Reloaded', `Cleared **${deleted}** message(s) and posted fresh embed in <#${channelId}>.`)]
   });
 }
 
