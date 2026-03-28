@@ -178,7 +178,7 @@ module.exports = {
         await event.save();
         await updateEventMessage(interaction, event);
 
-        const queuePosition = classData.queue.indexOf(userId);
+        const queuePosition = classData.queue.indexOf(userId) + 1;
 
         await interaction.reply({
           content: 
@@ -212,7 +212,6 @@ async function updateEventMessage(interaction, event) {
     const channel = await interaction.client.channels.fetch(event.channelId);
     const message = await channel.messages.fetch(event.messageId);
     
-    const buildEventEmbed = require('../utils/eventEmbed');
     const embed = buildEventEmbed(event);
 
     const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');

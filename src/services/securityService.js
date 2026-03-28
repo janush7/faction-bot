@@ -39,8 +39,8 @@ class SecurityService {
     const timePassed = Date.now() - lastChanged;
 
     if (timePassed < this.FACTION_COOLDOWN) {
-      const remaining = Math.ceil((this.FACTION_COOLDOWN - timePassed) / 3600000);
-      return remaining; // returns hours
+      const remaining = Math.ceil((this.FACTION_COOLDOWN - timePassed) / 1000);
+      return remaining; // returns seconds
     }
 
     this.factionChangeCooldowns.set(userId, Date.now());

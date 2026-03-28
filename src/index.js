@@ -4,14 +4,6 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const logger = require('./utils/logger');
 const { REQUIRED_ENV_VARS } = require('./config/constants');
 
-// ===== DEBUG =====
-console.log('MONGO_URI:', process.env.MONGO_URI);
-// ================
-const mongoose = require('mongoose');
-const { Client, GatewayIntentBits } = require('discord.js');
-const logger = require('./utils/logger');
-const { REQUIRED_ENV_VARS } = require('./config/constants');
-
 // ===== VALIDATE ENV VARIABLES =====
 for (const envVar of REQUIRED_ENV_VARS) {
   if (!process.env[envVar]) {
@@ -50,10 +42,7 @@ process.on('uncaughtException', (error) => {
 async function startBot() {
   try {
     // Connect to MongoDB FIRST
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    await mongoose.connect(process.env.MONGO_URI);
     logger.success('Connected to MongoDB');
 
     // THEN login to Discord
