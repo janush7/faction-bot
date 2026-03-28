@@ -7,8 +7,7 @@ function createFactionEmbed() {
     .setTitle('Choose your side!')
     .setDescription("Choose the side you'll be playing on by clicking one of the buttons below. After selecting a side, you'll gain access to the channels where the SL briefings will take place. Good luck, and see you on the server!")
     .setColor(0x011327)
-    .setThumbnail(THUMBNAIL_URL)
-    .setTimestamp();
+    .setThumbnail(THUMBNAIL_URL);
 }
 
 function createSuccessEmbed(title, description) {
