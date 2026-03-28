@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../../utils/logger');
 
 const TIMES = {
@@ -75,6 +75,7 @@ module.exports = {
     }
 
     const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
+    const defaultCaption = `Midweek Frontline – Lineup – ${dateLabel}`;
 
     const embed = new EmbedBuilder()
       .addFields(
@@ -83,10 +84,10 @@ module.exports = {
         { name: 'Game Start',      value: `<t:${startUnix}:t>`, inline: true },
       )
       .setImage('attachment://lineup.png')
-      .setFooter({ text: `Midweek Frontline – Lineup – ${dateLabel}` })
+      .setFooter({ text: defaultCaption })
       .setColor(0x011327);
 
-    await channel.send({
+    const posted = await channel.send({
       embeds: [embed],
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
@@ -106,6 +107,17 @@ module.exports = {
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
 
-    await interaction.editReply({ content: `✅ Lineup posted to ${channel}!` });
+    // customId encodes channel + message so the modal handler can edit it
+    const editBtn = new ButtonBuilder()
+      .setCustomId(`lineup_editcap:${channel.id}:${posted.id}`)
+      .setLabel('✏️ Edit Caption')
+      .setStyle(ButtonStyle.Secondary);
+
+    const row = new ActionRowBuilder().addComponents(editBtn);
+
+    await interaction.editReply({
+      content: `✅ Lineup posted to ${channel}!`,
+      components: [row],
+    });
   },
 };

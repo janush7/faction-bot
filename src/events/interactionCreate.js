@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embeds');
 const { createFactionButtons } = require('../utils/buttons');
@@ -25,11 +25,24 @@ module.exports = {
       return;
     }
 
+    // ── Modal Submits ───────────────────────────────────────────────────────
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith('lineup_caption:')) {
+        return await handleLineupCaptionSubmit(interaction);
+      }
+      return;
+    }
+
     if (!interaction.isButton()) return;
 
     const { customId } = interaction;
 
     try {
+      // ── Lineup Edit Caption Button ────────────────────────────────────────
+      if (customId.startsWith('lineup_editcap:')) {
+        return await handleLineupEditCapButton(interaction);
+      }
+
       // ── Faction Buttons ───────────────────────────────────────────────────
       if (customId === 'faction_allies' || customId === 'faction_axis') {
         const faction = customId === 'faction_allies' ? 'allies' : 'axis';
@@ -95,6 +108,70 @@ async function bulkDeleteFiltered(channel, filterFn) {
 
   return deleted;
 }
+
+// ── Lineup Caption Edit ───────────────────────────────────────────────────────
+
+async function handleLineupEditCapButton(interaction) {
+  // customId format: lineup_editcap:{channelId}:{messageId}
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+
+  // Fetch current footer to prefill the modal
+  let currentCaption = 'Midweek Frontline – Lineup – ';
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+    currentCaption = msg.embeds[0]?.footer?.text ?? currentCaption;
+  } catch (_) {}
+
+  const modal = new ModalBuilder()
+    .setCustomId(`lineup_caption:${channelId}:${messageId}`)
+    .setTitle('Edit Caption');
+
+  const input = new TextInputBuilder()
+    .setCustomId('caption_text')
+    .setLabel('Caption')
+    .setStyle(TextInputStyle.Short)
+    .setValue(currentCaption)
+    .setMaxLength(100)
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function handleLineupCaptionSubmit(interaction) {
+  // customId format: lineup_caption:{channelId}:{messageId}
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+  const newCaption = interaction.fields.getTextInputValue('caption_text');
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+
+    // Rebuild embed preserving all fields, just swap footer
+    const old = msg.embeds[0];
+    const updated = new EmbedBuilder()
+      .setColor(old.color)
+      .addFields(...old.fields)
+      .setImage(old.image?.url ?? null)
+      .setFooter({ text: newCaption });
+    if (old.thumbnail) updated.setThumbnail(old.thumbnail.url);
+
+    await msg.edit({ embeds: [updated] });
+
+    logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
+    await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, ephemeral: true });
+  } catch (err) {
+    logger.error('Failed to edit lineup caption:', err);
+    await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', ephemeral: true });
+  }
+}
+
+// ── Faction Selection ─────────────────────────────────────────────────────────
 
 async function handleFactionSelection(interaction, faction) {
   const alliesRoleId = process.env.ALLIES_ROLE;
