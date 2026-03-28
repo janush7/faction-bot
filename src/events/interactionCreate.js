@@ -160,11 +160,16 @@ async function handleLineupCaptionSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
 
     const old = msg.embeds[0];
+
+    // Always use 'attachment://lineup.png' so the embed references the
+    // already-attached file rather than a CDN URL — prevents the image
+    // from appearing twice (once as attachment preview, once as embed image).
     const updated = new EmbedBuilder()
       .setColor(old.color)
       .addFields(...old.fields)
-      .setImage(old.image?.url ?? null)
+      .setImage('attachment://lineup.png')
       .setFooter({ text: newCaption });
+
     if (old.thumbnail) updated.setThumbnail(old.thumbnail.url);
 
     await msg.edit({ embeds: [updated] });
