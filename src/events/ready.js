@@ -1,3 +1,4 @@
+const { ActivityType } = require('discord.js');
 const logger = require('../utils/logger');
 
 module.exports = {
@@ -8,6 +9,6 @@ module.exports = {
     logger.info(`Bot is in ${client.guilds.cache.size} guild(s)`);
     
     // Set bot status
-    client.user.setActivity('Event Management', { type: 'LISTENING' });
+    client.user.setActivity('Event Management', { type: ActivityType.Listening });
   }
 };
