@@ -1,7 +1,8 @@
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embeds');
 const { createFactionButtons } = require('../utils/buttons');
+const { getTimes, saveTimes } = require('../utils/timesConfig');
 
 module.exports = {
   name: 'interactionCreate',
@@ -25,6 +26,14 @@ module.exports = {
       return;
     }
 
+    // ── Modal Submits ───────────────────────────────────────────────────────
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'lineup_times_modal') {
+        return await handleTimesModal(interaction);
+      }
+      return;
+    }
+
     if (!interaction.isButton()) return;
 
     const { customId } = interaction;
@@ -34,6 +43,14 @@ module.exports = {
       if (customId === 'faction_allies' || customId === 'faction_axis') {
         const faction = customId === 'faction_allies' ? 'allies' : 'axis';
         return await handleFactionSelection(interaction, faction);
+      }
+
+      // ── Lineup Edit Times Button ──────────────────────────────────────────
+      if (customId === 'lineup_edittimes') {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ Administrators only.', ephemeral: true });
+        }
+        return await handleEditTimesButton(interaction);
       }
 
       // ── Admin Buttons ─────────────────────────────────────────────────────
@@ -75,11 +92,6 @@ async function sendLog(client, embed) {
   }
 }
 
-/**
- * Bulk-deletes messages from a channel using a filter function.
- * Handles the 14-day Discord limit gracefully — stops if nothing was deleted.
- * Returns the total number of deleted messages.
- */
 async function bulkDeleteFiltered(channel, filterFn) {
   let deleted = 0;
 
@@ -94,14 +106,75 @@ async function bulkDeleteFiltered(channel, filterFn) {
     const count = result ? result.size : 0;
     deleted += count;
 
-    // If nothing was deleted (all messages >14 days old), stop to avoid infinite loop
     if (count === 0) break;
-
-    // If we got fewer than 100 messages, there's nothing more to fetch
     if (fetched.size < 100) break;
   }
 
   return deleted;
+}
+
+async function handleEditTimesButton(interaction) {
+  const current = getTimes();
+
+  const modal = new ModalBuilder()
+    .setCustomId('lineup_times_modal')
+    .setTitle('⚙️ Edit Event Times (Warsaw)');
+
+  const matchInput = new TextInputBuilder()
+    .setCustomId('time_match')
+    .setLabel('Match Positions (HH:MM)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(current.matchPositions)
+    .setPlaceholder('e.g. 19:30')
+    .setRequired(true);
+
+  const slInput = new TextInputBuilder()
+    .setCustomId('time_sl')
+    .setLabel('SL Briefing (HH:MM)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(current.slBriefing)
+    .setPlaceholder('e.g. 19:30')
+    .setRequired(true);
+
+  const startInput = new TextInputBuilder()
+    .setCustomId('time_start')
+    .setLabel('Game Start (HH:MM)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(current.gameStart)
+    .setPlaceholder('e.g. 20:00')
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(matchInput),
+    new ActionRowBuilder().addComponents(slInput),
+    new ActionRowBuilder().addComponents(startInput),
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleTimesModal(interaction) {
+  const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+  const match = interaction.fields.getTextInputValue('time_match').trim();
+  const sl    = interaction.fields.getTextInputValue('time_sl').trim();
+  const start = interaction.fields.getTextInputValue('time_start').trim();
+
+  if (!timeRegex.test(match) || !timeRegex.test(sl) || !timeRegex.test(start)) {
+    return interaction.reply({
+      content: '❌ Invalid time format. Use HH:MM (e.g. `19:30`).',
+      ephemeral: true,
+    });
+  }
+
+  saveTimes({ matchPositions: match, slBriefing: sl, gameStart: start });
+
+  logger.info(`Event times updated by ${interaction.user.tag}: Match=${match} SL=${sl} Start=${start}`);
+
+  return interaction.reply({
+    content: `✅ Times updated!\n\n**Match Positions:** \`${match}\` · **SL Briefing:** \`${sl}\` · **Game Start:** \`${start}\`\n\nThese will apply to the next \`/lineup\`.`,
+    ephemeral: true,
+  });
 }
 
 async function handleFactionSelection(interaction, faction) {
@@ -121,7 +194,6 @@ async function handleFactionSelection(interaction, faction) {
     });
   }
 
-  // Already on this faction?
   if (member.roles.cache.has(selectedRoleId)) {
     return interaction.reply({
       content: `⚠️ You are already on **${factionLabel}**!`,
@@ -129,7 +201,6 @@ async function handleFactionSelection(interaction, faction) {
     });
   }
 
-  // Remove opposite role first
   const switched = oppositeRoleId && member.roles.cache.has(oppositeRoleId);
   if (switched) {
     await member.roles.remove(oppositeRoleId).catch(e =>
@@ -137,12 +208,10 @@ async function handleFactionSelection(interaction, faction) {
     );
   }
 
-  // Add selected role
   await member.roles.add(selectedRoleId);
 
   logger.info(`${interaction.user.tag} joined ${factionLabel}`);
 
-  // Log to admin channel
   const logEmbed = new EmbedBuilder()
     .setColor(factionColor)
     .setTitle(`${factionLabel} — Faction Selected`)
@@ -219,13 +288,11 @@ async function handleAdminReload(interaction) {
     });
   }
 
-  // Delete only bot embed messages
   const deleted = await bulkDeleteFiltered(
     channel,
     msg => msg.author.id === interaction.client.user.id && msg.embeds.length > 0
   );
 
-  // Post fresh embed
   await channel.send({
     embeds: [createFactionEmbed()],
     components: [createFactionButtons()]
@@ -267,7 +334,6 @@ async function handleAdminClearLogs(interaction) {
     });
   }
 
-  // Delete all messages (stops gracefully if messages are older than 14 days)
   const deleted = await bulkDeleteFiltered(channel, () => true);
 
   logger.info(`${interaction.user.tag} cleared ${deleted} log message(s)`);

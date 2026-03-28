@@ -1,10 +1,16 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../../utils/logger');
+const { getTimes } = require('../../utils/timesConfig');
 
 function getWarsawOffsetMs(date) {
   const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
   const warsaw = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
   return utc - warsaw;
+}
+
+function parseTime(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return { h: isNaN(h) ? 0 : h, m: isNaN(m) ? 0 : m };
 }
 
 function getNextWednesdayTimestamps() {
@@ -21,10 +27,18 @@ function getNextWednesdayTimestamps() {
   base.setSeconds(0);
   base.setMilliseconds(0);
 
-  base.setHours(19, 30);
+  const times = getTimes();
+
+  const match = parseTime(times.matchPositions);
+  base.setHours(match.h, match.m);
   const matchUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
 
-  base.setHours(20, 0);
+  const sl = parseTime(times.slBriefing);
+  base.setHours(sl.h, sl.m);
+  const slUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
+
+  const start = parseTime(times.gameStart);
+  base.setHours(start.h, start.m);
   const startUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
 
   const dd = String(base.getDate()).padStart(2, '0');
@@ -32,7 +46,7 @@ function getNextWednesdayTimestamps() {
   const yy = String(base.getFullYear()).slice(2);
   const dateLabel = `${dd}.${mm}.${yy}`;
 
-  return { matchUnix, startUnix, dateLabel };
+  return { matchUnix, slUnix, startUnix, dateLabel, times };
 }
 
 module.exports = {
@@ -65,12 +79,12 @@ module.exports = {
       return interaction.editReply({ content: '❌ Lineup channel not found. Check `LINEUP_CHANNEL` in `.env`.' });
     }
 
-    const { matchUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
+    const { matchUnix, slUnix, startUnix, dateLabel, times } = getNextWednesdayTimestamps();
 
     const embed = new EmbedBuilder()
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
-        { name: 'SL Briefing',     value: `<t:${matchUnix}:t>`, inline: true },
+        { name: 'SL Briefing',     value: `<t:${slUnix}:t>`,    inline: true },
         { name: 'Game Start',      value: `<t:${startUnix}:t>`, inline: true },
       )
       .setImage('attachment://lineup.png')
@@ -96,6 +110,18 @@ module.exports = {
     }
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
-    await interaction.editReply({ content: `✅ Lineup posted to ${channel}!` });
+
+    // Edit Times button
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('lineup_edittimes')
+        .setLabel('⚙️ Edit Times')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.editReply({
+      content: `✅ Lineup posted to ${channel}!\n\n**Current times (Warsaw):** Match Positions \`${times.matchPositions}\` · SL Briefing \`${times.slBriefing}\` · Game Start \`${times.gameStart}\``,
+      components: [row],
+    });
   },
 };
