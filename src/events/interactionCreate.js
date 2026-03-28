@@ -119,7 +119,7 @@ async function handleFactionSelection(interaction, faction) {
     .setTitle(`${factionLabel} — Faction Selected`)
     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
     .addFields(
-      { name: '👤 User', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+      { name: '👤 User',     value: `<@${interaction.user.id}>`, inline: true },
       { name: '🏳️ Faction', value: factionLabel, inline: true },
       { name: '🔄 Switched', value: switched ? 'Yes' : 'No', inline: true }
     )
@@ -161,8 +161,8 @@ async function handleAdminReset(interaction) {
     .setColor(0x011327)
     .setTitle('🔁 Manual Faction Reset')
     .addFields(
-      { name: '👤 Admin', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
-      { name: '✅ Roles Removed', value: `${count} member(s)`, inline: true }
+      { name: '👤 Admin',        value: `<@${interaction.user.id}>`, inline: true },
+      { name: '✅ Roles Removed', value: `${count} member(s)`,       inline: true }
     )
     .setTimestamp();
 
@@ -201,8 +201,8 @@ async function handleAdminReload(interaction) {
     .setColor(0x011327)
     .setTitle('🔄 Embed Reloaded')
     .addFields(
-      { name: '👤 Admin', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
-      { name: '📌 Channel', value: `<#${channelId}>`, inline: true }
+      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
     )
     .setTimestamp();
 
