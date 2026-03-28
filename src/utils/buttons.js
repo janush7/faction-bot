@@ -5,36 +5,14 @@ function createFactionButtons() {
     new ButtonBuilder()
       .setCustomId('allies')
       .setLabel('Allies')
-      .setEmoji('🔵')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🔵'),
     new ButtonBuilder()
       .setCustomId('axis')
       .setLabel('Axis')
+      .setStyle(ButtonStyle.Danger)
       .setEmoji('🔴')
-      .setStyle(ButtonStyle.Danger)
   );
 }
 
-function createAdminPanelButtons() {
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('admin_reset')
-      .setLabel('🧩 Reset Roles')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('admin_reload')
-      .setLabel('🔄 Reload Embed')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('admin_clearlogs')
-      .setLabel('🗑️ Clear Logs')
-      .setStyle(ButtonStyle.Danger)
-  );
-
-  return [row];
-}
-
-module.exports = {
-  createFactionButtons,
-  createAdminPanelButtons
-};
+module.exports = { createFactionButtons };
