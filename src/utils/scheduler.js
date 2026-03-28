@@ -2,13 +2,15 @@ const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const logger = require('./logger');
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 /**
  * Starts the weekly faction role reset scheduler.
  * Default: every Wednesday at 22:00 Europe/Warsaw.
  * Configurable via RESET_DAY (0=Sun, 3=Wed) and RESET_HOUR in .env
  */
 function startScheduler(client) {
-  const day = process.env.RESET_DAY ?? '3';     // 3 = Wednesday
+  const day  = process.env.RESET_DAY  ?? '3';   // 3 = Wednesday
   const hour = process.env.RESET_HOUR ?? '22';  // 22:00
 
   const expression = `0 ${hour} * * ${day}`;
@@ -18,11 +20,13 @@ function startScheduler(client) {
     return;
   }
 
+  const dayName = DAY_NAMES[parseInt(day)] ?? `day ${day}`;
+
   cron.schedule(expression, () => resetFactionRoles(client), {
     timezone: 'Europe/Warsaw'
   });
 
-  logger.info(`Scheduler started — auto-reset every day ${day} at ${hour}:00 Warsaw time`);
+  logger.info(`Scheduler started — auto-reset every ${dayName} at ${hour}:00 Warsaw time`);
 }
 
 async function resetFactionRoles(client) {
@@ -35,7 +39,7 @@ async function resetFactionRoles(client) {
   }
 
   const alliesRole = guild.roles.cache.get(process.env.ALLIES_ROLE);
-  const axisRole = guild.roles.cache.get(process.env.AXIS_ROLE);
+  const axisRole   = guild.roles.cache.get(process.env.AXIS_ROLE);
 
   if (!alliesRole || !axisRole) {
     logger.error('Scheduler: faction roles not found. Check ALLIES_ROLE and AXIS_ROLE in .env');
@@ -43,7 +47,7 @@ async function resetFactionRoles(client) {
   }
 
   let removed = 0;
-  let failed = 0;
+  let failed  = 0;
 
   try {
     await guild.members.fetch();
@@ -54,13 +58,13 @@ async function resetFactionRoles(client) {
 
   for (const [, member] of guild.members.cache) {
     const hasAllies = member.roles.cache.has(alliesRole.id);
-    const hasAxis = member.roles.cache.has(axisRole.id);
+    const hasAxis   = member.roles.cache.has(axisRole.id);
     if (!hasAllies && !hasAxis) continue;
 
     try {
       const rolesToRemove = [];
       if (hasAllies) rolesToRemove.push(alliesRole);
-      if (hasAxis) rolesToRemove.push(axisRole);
+      if (hasAxis)   rolesToRemove.push(axisRole);
       await member.roles.remove(rolesToRemove, 'Weekly faction reset');
       removed++;
     } catch (err) {
@@ -82,7 +86,7 @@ async function resetFactionRoles(client) {
           .setDescription('Scheduled weekly role reset has been executed.')
           .addFields(
             { name: '✅ Roles Removed', value: `${removed} member(s)`, inline: true },
-            { name: '❌ Failed', value: `${failed} member(s)`, inline: true }
+            { name: '❌ Failed',         value: `${failed} member(s)`,  inline: true }
           )
           .setTimestamp();
         await channel.send({ embeds: [embed] });

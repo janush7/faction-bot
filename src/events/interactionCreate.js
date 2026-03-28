@@ -75,6 +75,35 @@ async function sendLog(client, embed) {
   }
 }
 
+/**
+ * Bulk-deletes messages from a channel using a filter function.
+ * Handles the 14-day Discord limit gracefully — stops if nothing was deleted.
+ * Returns the total number of deleted messages.
+ */
+async function bulkDeleteFiltered(channel, filterFn) {
+  let deleted = 0;
+
+  while (true) {
+    const fetched = await channel.messages.fetch({ limit: 100 });
+    if (fetched.size === 0) break;
+
+    const toDelete = fetched.filter(filterFn);
+    if (toDelete.size === 0) break;
+
+    const result = await channel.bulkDelete(toDelete, true).catch(() => null);
+    const count = result ? result.size : 0;
+    deleted += count;
+
+    // If nothing was deleted (all messages >14 days old), stop to avoid infinite loop
+    if (count === 0) break;
+
+    // If we got fewer than 100 messages, there's nothing more to fetch
+    if (fetched.size < 100) break;
+  }
+
+  return deleted;
+}
+
 async function handleFactionSelection(interaction, faction) {
   const alliesRoleId = process.env.ALLIES_ROLE;
   const axisRoleId  = process.env.AXIS_ROLE;
@@ -190,23 +219,11 @@ async function handleAdminReload(interaction) {
     });
   }
 
-  // Delete only bot embed messages (faction embed messages sent by the bot)
-  let deleted = 0;
-  let fetched;
-  do {
-    fetched = await channel.messages.fetch({ limit: 100 });
-    if (fetched.size === 0) break;
-
-    const botEmbedMessages = fetched.filter(
-      msg => msg.author.id === interaction.client.user.id && msg.embeds.length > 0
-    );
-
-    if (botEmbedMessages.size === 0) break;
-
-    const result = await channel.bulkDelete(botEmbedMessages, true).catch(() => null);
-    if (result) deleted += result.size;
-    else break;
-  } while (fetched.size >= 2);
+  // Delete only bot embed messages
+  const deleted = await bulkDeleteFiltered(
+    channel,
+    msg => msg.author.id === interaction.client.user.id && msg.embeds.length > 0
+  );
 
   // Post fresh embed
   await channel.send({
@@ -250,14 +267,8 @@ async function handleAdminClearLogs(interaction) {
     });
   }
 
-  let deleted = 0;
-  let fetched;
-  do {
-    fetched = await channel.messages.fetch({ limit: 100 });
-    if (fetched.size === 0) break;
-    const result = await channel.bulkDelete(fetched, true).catch(() => null);
-    if (result) deleted += result.size;
-  } while (fetched.size >= 2);
+  // Delete all messages (stops gracefully if messages are older than 14 days)
+  const deleted = await bulkDeleteFiltered(channel, () => true);
 
   logger.info(`${interaction.user.tag} cleared ${deleted} log message(s)`);
 
