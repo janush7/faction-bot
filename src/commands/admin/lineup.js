@@ -1,53 +1,39 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const logger = require('../../utils/logger');
 
-/**
- * Returns Unix timestamps for next Wednesday's event times (Warsaw timezone).
- * If today is Wednesday and it's before 20:00 Warsaw time, uses today.
- */
-function getNextWednesdayTimestamps() {
-  const now = new Date();
-
-  // Get current time in Warsaw
-  const warsawNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
-  const day = warsawNow.getDay(); // 0=Sun, 3=Wed
-  const hour = warsawNow.getHours();
-
-  // Days until next Wednesday
-  let daysUntilWed = (3 - day + 7) % 7;
-  // If today is Wednesday and event hasn't started yet (before 20:00), use today
-  if (daysUntilWed === 0 && hour >= 20) daysUntilWed = 7;
-
-  // Build Warsaw date for next Wednesday
-  const eventDate = new Date(warsawNow);
-  eventDate.setDate(warsawNow.getDate() + daysUntilWed);
-  eventDate.setSeconds(0);
-  eventDate.setMilliseconds(0);
-
-  // Match Positions & SL Briefing: 19:30
-  eventDate.setHours(19, 30);
-  const ts1930 = Math.floor(new Date(eventDate.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }) + ' UTC').getTime() / 1000);
-
-  // Proper UTC conversion for Warsaw 19:30
-  const matchDate = new Date(eventDate);
-  // Use Intl to get offset
-  const offsetMatch = getWarsawOffsetMs(matchDate);
-  const matchUnix = Math.floor((matchDate.getTime() - offsetMatch) / 1000);
-
-  // Game Start: 20:00
-  eventDate.setHours(20, 0);
-  const startDate = new Date(eventDate);
-  const offsetStart = getWarsawOffsetMs(startDate);
-  const startUnix = Math.floor((startDate.getTime() - offsetStart) / 1000);
-
-  return { matchUnix, startUnix };
+function getWarsawOffsetMs(date) {
+  const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const warsaw = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
+  return utc - warsaw;
 }
 
-function getWarsawOffsetMs(date) {
-  // Get Warsaw UTC offset in ms
-  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const warsawDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
-  return utcDate - warsawDate;
+function getNextWednesdayTimestamps() {
+  const now = new Date();
+  const warsawNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
+  const day = warsawNow.getDay();
+  const hour = warsawNow.getHours();
+
+  let daysUntilWed = (3 - day + 7) % 7;
+  if (daysUntilWed === 0 && hour >= 20) daysUntilWed = 7;
+
+  const base = new Date(warsawNow);
+  base.setDate(warsawNow.getDate() + daysUntilWed);
+  base.setSeconds(0);
+  base.setMilliseconds(0);
+
+  base.setHours(19, 30);
+  const matchUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
+
+  base.setHours(20, 0);
+  const startUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
+
+  // Format date for caption: DD.MM.YY
+  const dd = String(base.getDate()).padStart(2, '0');
+  const mm = String(base.getMonth() + 1).padStart(2, '0');
+  const yy = String(base.getFullYear()).slice(2);
+  const dateLabel = `${dd}.${mm}.${yy}`;
+
+  return { matchUnix, startUnix, dateLabel };
 }
 
 module.exports = {
@@ -67,7 +53,6 @@ module.exports = {
 
     const attachment = interaction.options.getAttachment('zdjecie');
 
-    // Validate it's an image
     if (!attachment.contentType?.startsWith('image/')) {
       return interaction.editReply({ content: '❌ Plik musi być obrazkiem (PNG, JPG itp.)' });
     }
@@ -81,31 +66,36 @@ module.exports = {
       return interaction.editReply({ content: '❌ Nie znaleziono kanału lineupów. Sprawdź `LINEUP_CHANNEL` w `.env`.' });
     }
 
-    const { matchUnix, startUnix } = getNextWednesdayTimestamps();
+    const { matchUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
 
-    const content = [
-      '## MWF – LINEUPS',
-      `**Match Positions:** <t:${matchUnix}:t>`,
-      `**SL Briefing:** <t:${matchUnix}:t>`,
-      `**Game Start:** <t:${startUnix}:t>`,
-    ].join('\n');
+    const embed = new EmbedBuilder()
+      .setTitle('MWF \u2013 LINEUPS')
+      .addFields(
+        { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
+        { name: 'SL Briefing', value: `<t:${matchUnix}:t>`, inline: true },
+        { name: 'Game Start', value: `<t:${startUnix}:t>`, inline: true },
+      )
+      .setImage('attachment://lineup.png')
+      .setFooter({ text: `Midweek Frontline \u2013 Lineup \u2013 ${dateLabel}` })
+      .setColor(0x011327);
 
     await channel.send({
-      content,
-      files: [{ attachment: attachment.url, name: attachment.name }],
+      embeds: [embed],
+      files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
 
     // Log to admin channel
-    const logChannelId = process.env.ADMIN_LOG_CHANNEL;
-    const logChannel = logChannelId ? interaction.client.channels.cache.get(logChannelId) : null;
+    const logChannel = process.env.ADMIN_LOG_CHANNEL
+      ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
+      : null;
     if (logChannel) {
-      const embed = new EmbedBuilder()
+      const logEmbed = new EmbedBuilder()
         .setTitle('📋 Lineup wysłany')
-        .setDescription(`Lineup został wysłany na ${channel}`)
+        .setDescription(`Lineup wysłany na ${channel}`)
         .addFields({ name: 'Admin', value: `${interaction.user}`, inline: true })
         .setColor(0x5865f2)
         .setTimestamp();
-      logChannel.send({ embeds: [embed] }).catch(() => {});
+      logChannel.send({ embeds: [logEmbed] }).catch(() => {});
     }
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
