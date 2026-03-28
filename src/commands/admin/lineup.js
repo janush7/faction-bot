@@ -81,6 +81,7 @@ module.exports = {
 
     // ── Lineup embed ──────────────────────────────────────────────────────────
     const lineupEmbed = new EmbedBuilder()
+      .setThumbnail(THUMBNAIL_URL)
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'SL Briefing',     value: `<t:${slUnix}:t>`,    inline: true },
@@ -94,21 +95,6 @@ module.exports = {
       embeds: [lineupEmbed],
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
-
-    // ── Server Details embed ──────────────────────────────────────────────────
-    const serverName = process.env.SERVER_NAME || 'HCIA EU 1';
-    const serverPassword = process.env.SERVER_PASSWORD || 'MWFTIME';
-
-    const serverEmbed = new EmbedBuilder()
-      .setTitle('Server Details')
-      .setColor(0x011325)
-      .setThumbnail(THUMBNAIL_URL)
-      .addFields(
-        { name: '📌 Server Name', value: serverName,     inline: true },
-        { name: '🔒 Password',    value: serverPassword, inline: true }
-      );
-
-    const serverMsg = await channel.send({ embeds: [serverEmbed] });
 
     // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = process.env.ADMIN_LOG_CHANNEL
@@ -132,15 +118,10 @@ module.exports = {
       .setLabel('✏️ Edit Caption')
       .setStyle(ButtonStyle.Secondary);
 
-    const editServerBtn = new ButtonBuilder()
-      .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}`)
-      .setLabel('🖥️ Edit Server Details')
-      .setStyle(ButtonStyle.Secondary);
-
-    const row = new ActionRowBuilder().addComponents(editCaptionBtn, editServerBtn);
+    const row = new ActionRowBuilder().addComponents(editCaptionBtn);
 
     await interaction.editReply({
-      content: `✅ Lineup posted to ${channel}!`,
+      content: `✅ Lineup posted to ${channel}!\n\nTo edit an older lineup caption: \`/edit lineup message_id:<id>\``,
       components: [row],
     });
   },
