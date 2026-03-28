@@ -11,7 +11,7 @@ ENV NODE_ENV=production
 
 RUN addgroup -S botgroup && adduser -S botuser -G botgroup \
   && mkdir -p /app/data \
-  && chown -R botuser:botgroup /app/data
+  && chown -R botuser:botgroup /app
 
 USER botuser
 
