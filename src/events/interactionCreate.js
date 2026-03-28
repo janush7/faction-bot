@@ -3,6 +3,8 @@ const logger = require('../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embeds');
 const { createFactionButtons } = require('../utils/buttons');
 
+const THUMBNAIL_URL = 'https://raw.githubusercontent.com/janush7/faction-bot/main/assets/MWF.png';
+
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction) {
@@ -30,6 +32,9 @@ module.exports = {
       if (interaction.customId.startsWith('lineup_caption:')) {
         return await handleLineupCaptionSubmit(interaction);
       }
+      if (interaction.customId.startsWith('lineup_server:')) {
+        return await handleServerModalSubmit(interaction);
+      }
       return;
     }
 
@@ -41,6 +46,11 @@ module.exports = {
       // ── Lineup Edit Caption Button ────────────────────────────────────────
       if (customId.startsWith('lineup_editcap:')) {
         return await handleLineupEditCapButton(interaction);
+      }
+
+      // ── Lineup Edit Server Details Button ────────────────────────────────
+      if (customId.startsWith('lineup_editserver:')) {
+        return await handleServerEditButton(interaction);
       }
 
       // ── Faction Buttons ───────────────────────────────────────────────────
@@ -112,12 +122,10 @@ async function bulkDeleteFiltered(channel, filterFn) {
 // ── Lineup Caption Edit ───────────────────────────────────────────────────────
 
 async function handleLineupEditCapButton(interaction) {
-  // customId format: lineup_editcap:{channelId}:{messageId}
   const parts = interaction.customId.split(':');
   const channelId = parts[1];
   const messageId = parts[2];
 
-  // Fetch current footer to prefill the modal
   let currentCaption = 'Midweek Frontline – Lineup – ';
   try {
     const ch = await interaction.client.channels.fetch(channelId);
@@ -142,7 +150,6 @@ async function handleLineupEditCapButton(interaction) {
 }
 
 async function handleLineupCaptionSubmit(interaction) {
-  // customId format: lineup_caption:{channelId}:{messageId}
   const parts = interaction.customId.split(':');
   const channelId = parts[1];
   const messageId = parts[2];
@@ -152,7 +159,6 @@ async function handleLineupCaptionSubmit(interaction) {
     const ch = await interaction.client.channels.fetch(channelId);
     const msg = await ch.messages.fetch(messageId);
 
-    // Rebuild embed preserving all fields, just swap footer
     const old = msg.embeds[0];
     const updated = new EmbedBuilder()
       .setColor(old.color)
@@ -168,6 +174,90 @@ async function handleLineupCaptionSubmit(interaction) {
   } catch (err) {
     logger.error('Failed to edit lineup caption:', err);
     await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', ephemeral: true });
+  }
+}
+
+// ── Server Details Edit ───────────────────────────────────────────────────────
+
+async function handleServerEditButton(interaction) {
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+
+  let currentName = process.env.SERVER_NAME || 'HCIA EU 1';
+  let currentPass = process.env.SERVER_PASSWORD || 'MWFTIME';
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+    const fields = msg.embeds[0]?.fields ?? [];
+    const nameField = fields.find(f => f.name.includes('Server Name'));
+    const passField = fields.find(f => f.name.includes('Password'));
+    if (nameField) currentName = nameField.value;
+    if (passField) currentPass = passField.value;
+  } catch (_) {}
+
+  const modal = new ModalBuilder()
+    .setCustomId(`lineup_server:${channelId}:${messageId}`)
+    .setTitle('Edit Server Details');
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId('server_name')
+    .setLabel('Server Name')
+    .setStyle(TextInputStyle.Short)
+    .setValue(currentName)
+    .setMaxLength(100)
+    .setRequired(true);
+
+  const passInput = new TextInputBuilder()
+    .setCustomId('server_password')
+    .setLabel('Password')
+    .setStyle(TextInputStyle.Short)
+    .setValue(currentPass)
+    .setMaxLength(100)
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(nameInput),
+    new ActionRowBuilder().addComponents(passInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleServerModalSubmit(interaction) {
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+  const newName = interaction.fields.getTextInputValue('server_name');
+  const newPass = interaction.fields.getTextInputValue('server_password');
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+
+    const updated = new EmbedBuilder()
+      .setTitle('Server Details')
+      .setColor(0x011325)
+      .setThumbnail(THUMBNAIL_URL)
+      .addFields(
+        { name: '📌 Server Name', value: newName, inline: true },
+        { name: '🔒 Password',    value: newPass, inline: true }
+      );
+
+    await msg.edit({ embeds: [updated] });
+
+    logger.info(`${interaction.user.tag} updated server details: ${newName} / ${newPass}`);
+    await interaction.reply({
+      content: `✅ Server details updated!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
+      ephemeral: true
+    });
+  } catch (err) {
+    logger.error('Failed to edit server details:', err);
+    await interaction.reply({
+      content: '❌ Could not edit the message. It may be too old or I lack permissions.',
+      ephemeral: true
+    });
   }
 }
 

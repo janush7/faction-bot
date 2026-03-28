@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../../utils/logger');
 
+const THUMBNAIL_URL = 'https://raw.githubusercontent.com/janush7/faction-bot/main/assets/MWF.png';
+
 const TIMES = {
   matchPositions: { h: 19, m: 30 },
   slBriefing:     { h: 19, m: 30 },
@@ -77,7 +79,8 @@ module.exports = {
     const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
     const defaultCaption = `Midweek Frontline – Lineup – ${dateLabel}`;
 
-    const embed = new EmbedBuilder()
+    // ── Lineup embed ──────────────────────────────────────────────────────────
+    const lineupEmbed = new EmbedBuilder()
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'SL Briefing',     value: `<t:${slUnix}:t>`,    inline: true },
@@ -85,13 +88,29 @@ module.exports = {
       )
       .setImage('attachment://lineup.png')
       .setFooter({ text: defaultCaption })
-      .setColor(0x011327);
+      .setColor(0x011325);
 
     const posted = await channel.send({
-      embeds: [embed],
+      embeds: [lineupEmbed],
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
 
+    // ── Server Details embed ──────────────────────────────────────────────────
+    const serverName = process.env.SERVER_NAME || 'HCIA EU 1';
+    const serverPassword = process.env.SERVER_PASSWORD || 'MWFTIME';
+
+    const serverEmbed = new EmbedBuilder()
+      .setTitle('Server Details')
+      .setColor(0x011325)
+      .setThumbnail(THUMBNAIL_URL)
+      .addFields(
+        { name: '📌 Server Name', value: serverName,     inline: true },
+        { name: '🔒 Password',    value: serverPassword, inline: true }
+      );
+
+    const serverMsg = await channel.send({ embeds: [serverEmbed] });
+
+    // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
       : null;
@@ -107,13 +126,18 @@ module.exports = {
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
 
-    // customId encodes channel + message so the modal handler can edit it
-    const editBtn = new ButtonBuilder()
+    // ── Buttons ───────────────────────────────────────────────────────────────
+    const editCaptionBtn = new ButtonBuilder()
       .setCustomId(`lineup_editcap:${channel.id}:${posted.id}`)
       .setLabel('✏️ Edit Caption')
       .setStyle(ButtonStyle.Secondary);
 
-    const row = new ActionRowBuilder().addComponents(editBtn);
+    const editServerBtn = new ButtonBuilder()
+      .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}`)
+      .setLabel('🖥️ Edit Server Details')
+      .setStyle(ButtonStyle.Secondary);
+
+    const row = new ActionRowBuilder().addComponents(editCaptionBtn, editServerBtn);
 
     await interaction.editReply({
       content: `✅ Lineup posted to ${channel}!`,
