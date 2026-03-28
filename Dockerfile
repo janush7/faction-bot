@@ -9,7 +9,10 @@ COPY . .
 
 ENV NODE_ENV=production
 
-RUN addgroup -S botgroup && adduser -S botuser -G botgroup
+RUN addgroup -S botgroup && adduser -S botuser -G botgroup \
+  && mkdir -p /app/data \
+  && chown -R botuser:botgroup /app/data
+
 USER botuser
 
 CMD ["node", "src/index.js"]
