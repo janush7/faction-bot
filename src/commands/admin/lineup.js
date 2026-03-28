@@ -79,7 +79,6 @@ module.exports = {
     const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
     const defaultCaption = `Midweek Frontline – Lineup – ${dateLabel}`;
 
-    // ── Lineup embed ──────────────────────────────────────────────────────────
     const lineupEmbed = new EmbedBuilder()
       .setThumbnail(THUMBNAIL_URL)
       .addFields(
@@ -96,7 +95,6 @@ module.exports = {
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
 
-    // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
       : null;
@@ -112,7 +110,6 @@ module.exports = {
 
     logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
 
-    // ── Buttons ───────────────────────────────────────────────────────────────
     const editCaptionBtn = new ButtonBuilder()
       .setCustomId(`lineup_editcap:${channel.id}:${posted.id}`)
       .setLabel('✏️ Edit Caption')
@@ -121,7 +118,7 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(editCaptionBtn);
 
     await interaction.editReply({
-      content: `✅ Lineup posted to ${channel}!\n\nTo edit an older lineup caption: \`/edit lineup message_id:<id>\``,
+      content: `✅ Lineup posted to ${channel}!`,
       components: [row],
     });
   },

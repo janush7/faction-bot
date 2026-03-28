@@ -37,7 +37,6 @@ module.exports = {
 
     const serverMsg = await channel.send({ embeds: [serverEmbed] });
 
-    // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
       : null;
@@ -53,7 +52,6 @@ module.exports = {
 
     logger.info(`Server details sent to #${channel.name} by ${interaction.user.tag}`);
 
-    // ── Edit button ───────────────────────────────────────────────────────────
     const editBtn = new ButtonBuilder()
       .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}`)
       .setLabel('🖥️ Edit Server Details')
@@ -62,7 +60,7 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(editBtn);
 
     await interaction.editReply({
-      content: `✅ Server details posted to ${channel}!\n\nTo edit an older server details message: \`/edit server message_id:<id>\``,
+      content: `✅ Server details posted to ${channel}!`,
       components: [row],
     });
   },
