@@ -1,27 +1,27 @@
 {
   "name": "faction-bot",
   "version": "1.0.0",
-  "description": "A Discord faction-based bot",
+  "description": "Discord faction event management bot",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix",
     "deploy": "node deploy-commands.js"
   },
-  "keywords": [
-    "discord",
-    "bot",
-    "faction"
-  ],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.14.0",
+    "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
-    "mongoose": "^7.5.0",
-    "node-cron": "^4.2.1"
+    "mongoose": "^8.0.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
+    "eslint": "^8.57.0",
     "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
