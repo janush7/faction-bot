@@ -1,8 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../../utils/logger');
 
-const THUMBNAIL_URL = 'https://raw.githubusercontent.com/janush7/faction-bot/main/assets/MWF.png';
-
 const TIMES = {
   matchPositions: { h: 19, m: 30 },
   slBriefing:     { h: 19, m: 30 },
@@ -80,7 +78,6 @@ module.exports = {
     const defaultCaption = `Midweek Frontline – Lineup – ${dateLabel}`;
 
     const lineupEmbed = new EmbedBuilder()
-      .setThumbnail(THUMBNAIL_URL)
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'SL Briefing',     value: `<t:${slUnix}:t>`,    inline: true },
