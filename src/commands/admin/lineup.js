@@ -27,7 +27,6 @@ function getNextWednesdayTimestamps() {
   base.setHours(20, 0);
   const startUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
 
-  // Format date for caption: DD.MM.YY
   const dd = String(base.getDate()).padStart(2, '0');
   const mm = String(base.getMonth() + 1).padStart(2, '0');
   const yy = String(base.getFullYear()).slice(2);
@@ -69,14 +68,13 @@ module.exports = {
     const { matchUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
 
     const embed = new EmbedBuilder()
-      .setTitle('MWF \u2013 LINEUPS')
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'SL Briefing', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'Game Start', value: `<t:${startUnix}:t>`, inline: true },
       )
       .setImage('attachment://lineup.png')
-      .setFooter({ text: `Midweek Frontline \u2013 Lineup \u2013 ${dateLabel}` })
+      .setFooter({ text: `Midweek Frontline – Lineup – ${dateLabel}` })
       .setColor(0x011327);
 
     await channel.send({
@@ -84,7 +82,6 @@ module.exports = {
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
 
-    // Log to admin channel
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
       : null;
