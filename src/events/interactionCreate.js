@@ -31,8 +31,9 @@ module.exports = {
 
     try {
       // ── Faction Buttons ───────────────────────────────────────────────────
-      if (customId === 'allies' || customId === 'axis') {
-        return await handleFactionSelection(interaction, customId);
+      if (customId === 'faction_allies' || customId === 'faction_axis') {
+        const faction = customId === 'faction_allies' ? 'allies' : 'axis';
+        return await handleFactionSelection(interaction, faction);
       }
 
       // ── Admin Buttons ─────────────────────────────────────────────────────
