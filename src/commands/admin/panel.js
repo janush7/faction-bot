@@ -9,7 +9,7 @@ module.exports = {
     .setDescription('Open the admin control panel')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-async execute(interaction) {
+  async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({
         embeds: [createErrorEmbed('Permission Denied', 'You must be an administrator to use this command.')],
