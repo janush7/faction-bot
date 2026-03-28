@@ -5,22 +5,12 @@ function createFactionEmbed() {
   return new EmbedBuilder()
     .setTitle('Choose your side!')
     .setDescription(
-      'Choose the side you\'ll be playing on by clicking one of the buttons below. ' +
-      'After selecting a side, you\'ll gain access to the channels where the SL briefings will take place. ' +
+      "Choose the side you'll be playing on by clicking one of the buttons below. " +
+      "After selecting a side, you'll gain access to the channels where the SL briefings will take place. " +
       'Good luck, and see you on the server!'
     )
     .setColor([1, 19, 39])
-       .setThumbnail('https://i.imgur.com/8ZyRVhj.png');
-}
-
-function createFactionChangeEmbed(memberId, faction) {
-  const factionName = faction === 'allies' ? '🔵 Allies' : '🔴 Axis';
-  
-  return new EmbedBuilder()
-    .setTitle('Faction Changed')
-    .setDescription(`<@${memberId}> has joined **${factionName}**`)
-    .setColor(faction === 'allies' ? COLORS.ALLIES : COLORS.AXIS)
-    .setTimestamp();
+    .setThumbnail('https://i.imgur.com/8ZyRVhj.png');
 }
 
 function createAdminPanelEmbed() {
@@ -31,7 +21,7 @@ function createAdminPanelEmbed() {
     .addFields(
       { name: '🧩 Reset Roles', value: 'Remove all faction roles from members', inline: true },
       { name: '🔄 Reload Embed', value: 'Resend the faction selection embed', inline: true },
-      { name: '🗑️ Clear Logs', value: 'Delete all admin logs', inline: true },
+      { name: '🗑️ Clear Logs', value: 'Delete messages from the log channel', inline: true },
     );
 }
 
@@ -51,7 +41,6 @@ function createSuccessEmbed(title, description) {
 
 module.exports = {
   createFactionEmbed,
-  createFactionChangeEmbed,
   createAdminPanelEmbed,
   createErrorEmbed,
   createSuccessEmbed
