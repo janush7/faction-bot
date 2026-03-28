@@ -190,13 +190,20 @@ async function handleAdminReload(interaction) {
     });
   }
 
-  // Delete all existing messages in the faction channel
+  // Delete only bot embed messages (faction embed messages sent by the bot)
   let deleted = 0;
   let fetched;
   do {
     fetched = await channel.messages.fetch({ limit: 100 });
     if (fetched.size === 0) break;
-    const result = await channel.bulkDelete(fetched, true).catch(() => null);
+
+    const botEmbedMessages = fetched.filter(
+      msg => msg.author.id === interaction.client.user.id && msg.embeds.length > 0
+    );
+
+    if (botEmbedMessages.size === 0) break;
+
+    const result = await channel.bulkDelete(botEmbedMessages, true).catch(() => null);
     if (result) deleted += result.size;
     else break;
   } while (fetched.size >= 2);
@@ -207,7 +214,7 @@ async function handleAdminReload(interaction) {
     components: [createFactionButtons()]
   });
 
-  logger.info(`${interaction.user.tag} reloaded faction embed in #${channel.name} (deleted ${deleted} message(s))`);
+  logger.info(`${interaction.user.tag} reloaded faction embed in #${channel.name} (deleted ${deleted} embed(s))`);
 
   const logEmbed = new EmbedBuilder()
     .setColor(0x011327)
@@ -215,14 +222,14 @@ async function handleAdminReload(interaction) {
     .addFields(
       { name: '👤 Admin',          value: `<@${interaction.user.id}>`, inline: true },
       { name: '📌 Channel',        value: `<#${channelId}>`,           inline: true },
-      { name: '🗑️ Msgs Deleted',  value: `${deleted}`,                inline: true }
+      { name: '🗑️ Embeds Deleted', value: `${deleted}`,               inline: true }
     )
     .setTimestamp();
 
   await sendLog(interaction.client, logEmbed);
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Embed Reloaded', `Cleared **${deleted}** message(s) and posted fresh embed in <#${channelId}>.`)]
+    embeds: [createSuccessEmbed('Embed Reloaded', `Cleared **${deleted}** embed(s) and posted fresh embed in <#${channelId}>.`)]
   });
 }
 
