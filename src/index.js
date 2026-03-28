@@ -20,8 +20,8 @@ const client = new Client({
 
 client.commands = new Collection();
 
-const { loadCommands } = require('./handlers/commandHandler');
-const { loadEvents } = require('./handlers/eventHandler');
+const loadCommands = require('./handlers/commandHandler');
+const loadEvents = require('./handlers/eventHandler');
 
 loadCommands(client);
 loadEvents(client);
