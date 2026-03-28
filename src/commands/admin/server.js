@@ -10,6 +10,15 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
+    // Channel restriction check
+    const allowedChannelId = process.env.SERVER_COMMAND_CHANNEL;
+    if (allowedChannelId && interaction.channelId !== allowedChannelId) {
+      return interaction.reply({
+        content: `❌ This command can only be used in <#${allowedChannelId}>.`,
+        ephemeral: true,
+      });
+    }
+
     await interaction.deferReply({ ephemeral: true });
 
     const channelId = process.env.SERVER_DETAILS_CHANNEL;

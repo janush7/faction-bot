@@ -57,6 +57,15 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // Channel restriction check
+    const allowedChannelId = process.env.LINEUP_COMMAND_CHANNEL;
+    if (allowedChannelId && interaction.channelId !== allowedChannelId) {
+      return interaction.reply({
+        content: `❌ This command can only be used in <#${allowedChannelId}>.`,
+        ephemeral: true,
+      });
+    }
+
     await interaction.deferReply({ ephemeral: true });
 
     const attachment = interaction.options.getAttachment('image');

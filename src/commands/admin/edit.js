@@ -37,6 +37,15 @@ module.exports = {
 
     // ── Edit Lineup Caption ────────────────────────────────────────────────────
     if (sub === 'lineup') {
+      // Channel restriction check
+      const allowedChannelId = process.env.LINEUP_COMMAND_CHANNEL;
+      if (allowedChannelId && interaction.channelId !== allowedChannelId) {
+        return interaction.reply({
+          content: `❌ This command can only be used in <#${allowedChannelId}>.`,
+          ephemeral: true,
+        });
+      }
+
       const channelId = process.env.LINEUP_CHANNEL || interaction.channelId;
       const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
 
@@ -80,6 +89,15 @@ module.exports = {
 
     // ── Edit Server Details ────────────────────────────────────────────────────
     if (sub === 'server') {
+      // Channel restriction check
+      const allowedChannelId = process.env.SERVER_COMMAND_CHANNEL;
+      if (allowedChannelId && interaction.channelId !== allowedChannelId) {
+        return interaction.reply({
+          content: `❌ This command can only be used in <#${allowedChannelId}>.`,
+          ephemeral: true,
+        });
+      }
+
       const channelId = process.env.SERVER_DETAILS_CHANNEL || interaction.channelId;
       const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
 
