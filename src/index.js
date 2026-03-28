@@ -1,11 +1,10 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const mongoose = require('mongoose');
 const logger = require('./utils/logger');
 const { REQUIRED_ENV_VARS } = require('./config/constants');
 
 // ── Global error handlers ─────────────────────────────────────────────────────
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Promise Rejection:', reason);
 });
 
@@ -33,31 +32,19 @@ const client = new Client({
 });
 
 // ── Load handlers ─────────────────────────────────────────────────────────────
-const { loadCommands } = require('./handlers/commandHandler');
-const { loadEvents } = require('./handlers/eventHandler');
+const loadCommands = require('./handlers/commandHandler');
+const loadEvents = require('./handlers/eventHandler');
 
 loadCommands(client);
 loadEvents(client);
 
-// ── MongoDB connection ────────────────────────────────────────────────────────
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    logger.info('Connected to MongoDB');
-    client.login(process.env.DISCORD_TOKEN);
-  })
+// ── Connect to Discord ────────────────────────────────────────────────────────
+client.login(process.env.TOKEN)
+  .then(() => logger.info('Connecting to Discord...'))
   .catch((err) => {
-    logger.error('MongoDB connection failed:', err);
+    logger.error('Discord login failed:', err);
     process.exit(1);
   });
-
-mongoose.connection.on('disconnected', () => {
-  logger.warn('MongoDB disconnected — attempting to reconnect…');
-});
-
-mongoose.connection.on('reconnected', () => {
-  logger.info('MongoDB reconnected');
-});
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 async function gracefulShutdown(signal) {
@@ -65,8 +52,6 @@ async function gracefulShutdown(signal) {
   try {
     client.destroy();
     logger.info('Discord client destroyed');
-    await mongoose.connection.close();
-    logger.info('MongoDB connection closed');
   } catch (err) {
     logger.error('Error during shutdown:', err);
   }
