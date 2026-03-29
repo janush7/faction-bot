@@ -62,11 +62,11 @@ module.exports = {
     if (allowedChannelId && interaction.channelId !== allowedChannelId) {
       return interaction.reply({
         content: `❌ This command can only be used in <#${allowedChannelId}>.`,
-        ephemeral: true,
+        flags: 64,
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     const attachment = interaction.options.getAttachment('image');
 
@@ -94,7 +94,7 @@ module.exports = {
       )
       .setImage('attachment://lineup.png')
       .setFooter({ text: defaultCaption })
-      .setColor(0x011325);
+      .setColor(0x011327);
 
     const posted = await channel.send({
       embeds: [lineupEmbed],
@@ -108,7 +108,7 @@ module.exports = {
       const logEmbed = new EmbedBuilder()
         .setTitle('📋 Lineup Posted')
         .setDescription(`Lineup posted to ${channel}`)
-        .addFields({ name: 'Admin', value: `${interaction.user}`, inline: true })
+        .addFields({ name: 'Admin', value: `<@${interaction.user.id}>`, inline: true })
         .setColor(0x5865f2)
         .setTimestamp();
       logChannel.send({ embeds: [logEmbed] }).catch(() => {});

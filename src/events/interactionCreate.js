@@ -64,6 +64,9 @@ module.exports = {
       // ── Lineup Edit Caption Button (from /lineup ephemeral reply) ─────────
       if (customId.startsWith('lineup_editcap:'))    return await handleLineupEditCapButton(interaction);
 
+      // ── Server Edit Button (from Post Server ephemeral reply) ─────────────
+      if (customId.startsWith('lineup_editserver:')) return await handleLineupEditServerButton(interaction);
+
       // ── Faction Buttons ───────────────────────────────────────────────────
       if (customId === 'faction_allies' || customId === 'faction_axis') {
         return await handleFactionSelection(interaction, customId === 'faction_allies' ? 'allies' : 'axis');
@@ -246,13 +249,17 @@ async function handleLineupCaptionSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
     const old = msg.embeds[0];
 
+    // Use the existing CDN image URL — do NOT use attachment://lineup.png
+    // as re-attaching the file is not possible during an edit.
+    const imageUrl = old.image?.url ?? null;
+
     const updated = new EmbedBuilder()
       .setColor(old.color)
-      .addFields(...old.fields)
-      .setImage('attachment://lineup.png')
       .setFooter({ text: newCaption });
 
-    if (old.thumbnail) updated.setThumbnail(old.thumbnail.url);
+    if (old.fields?.length) updated.addFields(...old.fields);
+    if (imageUrl)           updated.setImage(imageUrl);
+    if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
 
     await msg.edit({ embeds: [updated] });
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
@@ -261,6 +268,52 @@ async function handleLineupCaptionSubmit(interaction) {
     logger.error('Failed to edit lineup caption:', err);
     await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
   }
+}
+
+// ── Server Edit Button (from Post Server ephemeral reply) ─────────────────────
+
+async function handleLineupEditServerButton(interaction) {
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+
+  let currentName = process.env.SERVER_NAME     || 'HCIA EU 1';
+  let currentPass = process.env.SERVER_PASSWORD || 'MWFTIME';
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+    const fields = msg.embeds[0]?.fields ?? [];
+    currentName = fields.find(f => f.name.includes('Server Name'))?.value ?? currentName;
+    currentPass = fields.find(f => f.name.includes('Password'))?.value   ?? currentPass;
+  } catch (_) {}
+
+  const modal = new ModalBuilder()
+    .setCustomId(`lineup_server:${channelId}:${messageId}`)
+    .setTitle('Edit Server Details');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('server_name')
+        .setLabel('Server Name')
+        .setStyle(TextInputStyle.Short)
+        .setValue(currentName)
+        .setMaxLength(100)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('server_password')
+        .setLabel('Password')
+        .setStyle(TextInputStyle.Short)
+        .setValue(currentPass)
+        .setMaxLength(100)
+        .setRequired(true)
+    )
+  );
+
+  await interaction.showModal(modal);
 }
 
 // ── Server Details Modal Submit ───────────────────────────────────────────────
@@ -278,7 +331,7 @@ async function handleServerModalSubmit(interaction) {
 
     const updated = new EmbedBuilder()
       .setTitle('Server Details')
-      .setColor(0x011325)
+      .setColor(0x011327)
       .setThumbnail(THUMBNAIL_URL)
       .addFields(
         { name: '📌 Server Name', value: newName, inline: true },
@@ -614,7 +667,7 @@ async function handleAdminPostServer(interaction) {
 
   const serverEmbed = new EmbedBuilder()
     .setTitle('Server Details')
-    .setColor(0x011325)
+    .setColor(0x011327)
     .setThumbnail(THUMBNAIL_URL)
     .addFields(
       { name: '📌 Server Name', value: serverName,     inline: true },

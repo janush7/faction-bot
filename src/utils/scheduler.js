@@ -49,6 +49,7 @@ async function resetFactionRoles(client) {
   let removed = 0;
   let failed  = 0;
 
+  // Fetch all members to populate the cache so role.members is accurate
   try {
     await guild.members.fetch();
   } catch (err) {
@@ -56,15 +57,22 @@ async function resetFactionRoles(client) {
     return;
   }
 
-  for (const [, member] of guild.members.cache) {
-    const hasAllies = member.roles.cache.has(alliesRole.id);
-    const hasAxis   = member.roles.cache.has(axisRole.id);
-    if (!hasAllies && !hasAxis) continue;
+  // Only iterate members that actually have a faction role — skip everyone else
+  const membersToReset = new Map([
+    ...alliesRole.members,
+    ...axisRole.members
+  ]);
 
+  if (!membersToReset.size) {
+    logger.info('Scheduler: no members with faction roles — nothing to reset.');
+  }
+
+  for (const [, member] of membersToReset) {
     try {
       const rolesToRemove = [];
-      if (hasAllies) rolesToRemove.push(alliesRole);
-      if (hasAxis)   rolesToRemove.push(axisRole);
+      if (member.roles.cache.has(alliesRole.id)) rolesToRemove.push(alliesRole);
+      if (member.roles.cache.has(axisRole.id))   rolesToRemove.push(axisRole);
+      if (!rolesToRemove.length) continue;
       await member.roles.remove(rolesToRemove, 'Weekly faction reset');
       removed++;
     } catch (err) {
