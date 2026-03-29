@@ -7,6 +7,7 @@
  *  2. Edit round-trip: raw event lines (DD/MM/YYYY - MapName) are persisted in
  *     rotationStore so the Edit Rotation modal always shows the human-readable
  *     date instead of the rendered <t:unix:F> Discord timestamps.
+ *  3. Month headers use ## markdown heading so they render larger in Discord.
  */
 
 const {
@@ -83,18 +84,23 @@ function parseEventLines(text) {
   }).join('\n');
 }
 
+/**
+ * Builds the Map Rotation embed.
+ * Month headers use ## markdown so they render as large headings in Discord.
+ */
 function buildRotationEmbed(data) {
-  // Prepend a zero-width space + newline for visual spacing between the month
-  // header (field name) and the first event line (field value).
-  const pad = (text) => `\u200B\n${text || '—'}`;
+  const description = [
+    `## ${data.month1Header}`,
+    data.month1Events || '—',
+    '',
+    `## ${data.month2Header}`,
+    data.month2Events || '—'
+  ].join('\n');
 
   return new EmbedBuilder()
     .setAuthor({ name: 'MWF Map Rotation', iconURL: THUMBNAIL_URL })
     .setColor(0x011327)
-    .addFields(
-      { name: data.month1Header, value: pad(data.month1Events), inline: false },
-      { name: data.month2Header, value: pad(data.month2Events), inline: false }
-    );
+    .setDescription(description);
 }
 
 // ── Map Rotation Modal Submit ─────────────────────────────────────────────────
@@ -128,10 +134,10 @@ async function handleRotationModalSubmit(interaction) {
 
     await sendLog(interaction.client, new EmbedBuilder()
       .setColor(0x011327)
-      .setTitle('🗺️ Map Rotation Edited')
+      .setTitle('\uD83D\uDDFA\uFE0F Map Rotation Edited')
       .addFields(
-        { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-        { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+        { name: '\uD83D\uDC64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+        { name: '\uD83D\uDCCC Channel', value: `<#${channelId}>`,           inline: true }
       )
       .setTimestamp()
     );
@@ -177,10 +183,10 @@ async function handleAdminPostRotation(interaction) {
 
   await sendLog(interaction.client, new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('🗺️ Map Rotation Posted')
+    .setTitle('\uD83D\uDDFA\uFE0F Map Rotation Posted')
     .addFields(
-      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+      { name: '\uD83D\uDC64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '\uD83D\uDCCC Channel', value: `<#${channelId}>`,           inline: true }
     )
     .setTimestamp()
   );
@@ -213,26 +219,47 @@ async function handleAdminEditRotation(interaction) {
 
   if (!msg) {
     return interaction.reply({
-      content: '❌ No Map Rotation message found in the channel. Post one first using **Post Rotation**.',
+      content: '\u274C No Map Rotation message found in the channel. Post one first using **Post Rotation**.',
       flags: 64
     });
   }
 
   // Prefer the persisted raw data (round-trip safe).
-  // Fall back to the embed field values (legacy behaviour for embeds posted before this fix).
+  // Fall back to parsing the embed description (legacy / old-format embeds).
   let data = loadRotationRaw(msg.id);
 
   if (!data) {
-    const fields    = msg.embeds[0]?.fields ?? [];
-    const stripPad  = (str) => str.replace(/^\u200B\n/, '');
-    data = fields.length >= 2
-      ? {
-          month1Header: fields[0].name,
-          month1Events: stripPad(fields[0].value),
-          month2Header: fields[1].name,
-          month2Events: stripPad(fields[1].value)
-        }
-      : getDefaultRotationData();
+    const description = msg.embeds[0]?.description ?? '';
+    // Parse sections split by ## headings
+    const sections = description.split(/^## /m).filter(Boolean);
+    if (sections.length >= 2) {
+      const parseSection = (section) => {
+        const lines = section.split('\n');
+        const header = lines[0].trim();
+        const events = lines.slice(1).join('\n').trim();
+        return { header, events };
+      };
+      const s1 = parseSection(sections[0]);
+      const s2 = parseSection(sections[1]);
+      data = {
+        month1Header: s1.header,
+        month1Events: s1.events,
+        month2Header: s2.header,
+        month2Events: s2.events
+      };
+    } else {
+      // Last resort: try old field-based format
+      const fields   = msg.embeds[0]?.fields ?? [];
+      const stripPad = (str) => str.replace(/^\u200B\n/, '');
+      data = fields.length >= 2
+        ? {
+            month1Header: fields[0].name,
+            month1Events: stripPad(fields[0].value),
+            month2Header: fields[1].name,
+            month2Events: stripPad(fields[1].value)
+          }
+        : getDefaultRotationData();
+    }
   }
 
   const modal = new ModalBuilder()
