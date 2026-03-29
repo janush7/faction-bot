@@ -161,9 +161,6 @@ async function handleLineupCaptionSubmit(interaction) {
 
     const old = msg.embeds[0];
 
-    // Always use 'attachment://lineup.png' so the embed references the
-    // already-attached file rather than a CDN URL — prevents the image
-    // from appearing twice (once as attachment preview, once as embed image).
     const updated = new EmbedBuilder()
       .setColor(old.color)
       .addFields(...old.fields)
@@ -365,10 +362,10 @@ async function handleAdminReset(interaction) {
 async function handleAdminReload(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
-  const channelId = process.env.CHANNEL_ID;
+  const channelId = process.env.FACTION_CHANNEL;
   if (!channelId) {
     return interaction.editReply({
-      embeds: [createErrorEmbed('Config Error', 'CHANNEL_ID is not set in environment variables.')]
+      embeds: [createErrorEmbed('Config Error', 'FACTION_CHANNEL is not set in environment variables.')]
     });
   }
 
