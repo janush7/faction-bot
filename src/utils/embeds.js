@@ -1,6 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-
-const THUMBNAIL_URL = 'https://raw.githubusercontent.com/janush7/faction-bot/main/assets/MWF.png';
+const { THUMBNAIL_URL } = require('../config/constants');
 
 function createFactionEmbed() {
   return new EmbedBuilder()
