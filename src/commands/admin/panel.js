@@ -14,7 +14,8 @@ module.exports = {
         { name: '📋 Faction',        value: 'Reload the faction embed or reset all roles', inline: false },
         { name: '📸 Lineup',         value: 'Edit the caption of the last posted lineup',  inline: false },
         { name: '🖥️ Server Details', value: 'Post or edit server details',                 inline: false },
-        { name: '🧹 Logs',           value: 'Clear messages in the log channel',           inline: false }
+        { name: '📍 Nodes',          value: 'Post or edit the Nodes info embed',            inline: false },
+        { name: '🧹 Logs',           value: 'Clear messages in the log channel',            inline: false }
       );
 
     // Row 1 — Faction
@@ -54,8 +55,22 @@ module.exports = {
         .setEmoji('✏️')
     );
 
-    // Row 4 — Logs
+    // Row 4 — Nodes
     const row4 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('admin_post_nodes')
+        .setLabel('Post Nodes')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('📍'),
+      new ButtonBuilder()
+        .setCustomId('admin_edit_nodes')
+        .setLabel('Edit Nodes')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✏️')
+    );
+
+    // Row 5 — Logs
+    const row5 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('admin_clearlogs')
         .setLabel('Clear Logs')
@@ -65,7 +80,7 @@ module.exports = {
 
     await interaction.reply({
       embeds: [embed],
-      components: [row1, row2, row3, row4],
+      components: [row1, row2, row3, row4, row5],
       flags: 64
     });
   }
