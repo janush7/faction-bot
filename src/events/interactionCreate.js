@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../utils/embeds');
 const { createFactionButtons } = require('../utils/buttons');
@@ -68,9 +68,11 @@ module.exports = {
           });
         }
 
-        if (customId === 'admin_reset')     return await handleAdminReset(interaction);
-        if (customId === 'admin_reload')    return await handleAdminReload(interaction);
-        if (customId === 'admin_clearlogs') return await handleAdminClearLogs(interaction);
+        if (customId === 'admin_reset')          return await handleAdminResetConfirm(interaction);
+        if (customId === 'admin_reset_confirm')  return await handleAdminReset(interaction);
+        if (customId === 'admin_reset_cancel')   return await handleAdminResetCancel(interaction);
+        if (customId === 'admin_reload')         return await handleAdminReload(interaction);
+        if (customId === 'admin_clearlogs')      return await handleAdminClearLogs(interaction);
       }
 
     } catch (error) {
@@ -319,8 +321,40 @@ async function handleFactionSelection(interaction, faction) {
   });
 }
 
+// ── Admin Reset Confirmation ──────────────────────────────────────────────────
+
+async function handleAdminResetConfirm(interaction) {
+  const confirmEmbed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle('⚠️ Confirm Role Reset')
+    .setDescription('This will remove **all Allies and Axis roles** from every member.\n\nAre you sure?');
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_reset_confirm')
+      .setLabel('Confirm')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('admin_reset_cancel')
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return interaction.reply({ embeds: [confirmEmbed], components: [row], flags: 64 });
+}
+
+async function handleAdminResetCancel(interaction) {
+  return interaction.update({
+    embeds: [createErrorEmbed('Cancelled', 'Role reset was cancelled.')],
+    components: []
+  });
+}
+
 async function handleAdminReset(interaction) {
-  await interaction.deferReply({ flags: 64 });
+  await interaction.update({
+    embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Resetting faction roles...')],
+    components: []
+  });
 
   const alliesRoleId = process.env.ALLIES_ROLE;
   const axisRoleId  = process.env.AXIS_ROLE;
@@ -338,11 +372,9 @@ async function handleAdminReset(interaction) {
     const role = guild.roles.cache.get(roleId);
     if (!role) continue;
 
-    // role.members uses the cache — no extra API call needed
     const membersWithRole = [...role.members.values()];
     if (membersWithRole.length === 0) continue;
 
-    // Remove roles in parallel for speed
     const results = await Promise.allSettled(
       membersWithRole.map(member => member.roles.remove(roleId))
     );
@@ -371,7 +403,8 @@ async function handleAdminReset(interaction) {
   await sendLog(interaction.client, logEmbed);
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Roles Reset', `Removed **${count}** faction role(s).${errors.length ? `\n⚠️ ${errors.length} error(s) occurred.` : ''}`)]
+    embeds: [createSuccessEmbed('Roles Reset', `Removed **${count}** faction role(s).${errors.length ? `\n⚠️ ${errors.length} error(s) occurred.` : ''}`)],
+    components: []
   });
 }
 
