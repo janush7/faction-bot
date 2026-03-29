@@ -1,0 +1,213 @@
+/**
+ * nodesHandler.js — Handles NODES embed post and edit interactions.
+ */
+
+const {
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder
+} = require('discord.js');
+const logger = require('../../utils/logger');
+const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
+const { THUMBNAIL_URL, DEFAULT_NODES } = require('../../config/constants');
+const { sendLog, findLastBotMessage } = require('./shared');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getNodesChannelIds() {
+  const env = process.env.NODES_CHANNELS || '';
+  return env.split(',').map(id => id.trim()).filter(Boolean);
+}
+
+function buildNodesEmbed(fields) {
+  return new EmbedBuilder()
+    .setTitle('NODES')
+    .setColor(0x011327)
+    .setThumbnail(THUMBNAIL_URL)
+    .addFields(fields);
+}
+
+// ── Nodes Modal Submit ────────────────────────────────────────────────────────
+
+async function handleNodesModalSubmit(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const fields = [
+    { name: 'North / West HQ', value: interaction.fields.getTextInputValue('nodes_nw')   || '—' },
+    { name: 'Mid HQ',          value: interaction.fields.getTextInputValue('nodes_mid')  || '—' },
+    { name: 'South / East HQ', value: interaction.fields.getTextInputValue('nodes_se')   || '—' },
+    { name: 'Arty',            value: interaction.fields.getTextInputValue('nodes_arty') || '—' }
+  ];
+
+  const updatedEmbed = buildNodesEmbed(fields);
+  const channelIds   = getNodesChannelIds();
+
+  if (!channelIds.length) {
+    return interaction.editReply({ embeds: [createErrorEmbed('Config Error', 'NODES_CHANNELS is not set in .env.')] });
+  }
+
+  let edited = 0;
+  let failed = 0;
+
+  for (const channelId of channelIds) {
+    try {
+      const ch  = await interaction.client.channels.fetch(channelId);
+      const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === 'NODES'));
+      if (msg) {
+        await msg.edit({ embeds: [updatedEmbed] });
+        edited++;
+      } else {
+        failed++;
+        logger.warn(`No NODES message found in channel ${channelId}`);
+      }
+    } catch (err) {
+      failed++;
+      logger.error(`Failed to edit NODES in channel ${channelId}: ${err.message}`);
+    }
+  }
+
+  logger.info(`${interaction.user.tag} edited NODES embed — ${edited} updated, ${failed} failed`);
+
+  await sendLog(interaction.client, new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('📍 Nodes Embed Edited')
+    .addFields(
+      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '✅ Updated', value: `${edited}`,                  inline: true },
+      { name: '❌ Failed',  value: `${failed}`,                  inline: true }
+    )
+    .setTimestamp()
+  );
+
+  return interaction.editReply({
+    embeds: [createSuccessEmbed('Nodes Updated', `Updated **${edited}** message(s).${failed ? `\n⚠️ ${failed} channel(s) had no existing NODES message.` : ''}`)]
+  });
+}
+
+// ── Admin: Post Nodes (panel button) ─────────────────────────────────────────
+
+async function handleAdminPostNodes(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const channelIds = getNodesChannelIds();
+
+  if (!channelIds.length) {
+    return interaction.editReply({
+      embeds: [createErrorEmbed('Config Error', 'NODES_CHANNELS is not set in .env.')]
+    });
+  }
+
+  const nodesEmbed     = buildNodesEmbed(DEFAULT_NODES);
+  let posted           = 0;
+  let failed           = 0;
+  const postedChannels = [];
+
+  for (const channelId of channelIds) {
+    try {
+      const ch = await interaction.client.channels.fetch(channelId);
+      await ch.send({ embeds: [nodesEmbed] });
+      postedChannels.push(`<#${channelId}>`);
+      posted++;
+    } catch (err) {
+      failed++;
+      logger.error(`Failed to post NODES to channel ${channelId}: ${err.message}`);
+    }
+  }
+
+  logger.info(`${interaction.user.tag} posted NODES embed to ${posted} channel(s)`);
+
+  await sendLog(interaction.client, new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('📍 Nodes Embed Posted')
+    .addFields(
+      { name: '👤 Admin',    value: `<@${interaction.user.id}>`,        inline: true },
+      { name: '📌 Channels', value: postedChannels.join(', ') || '—',  inline: true },
+      { name: '❌ Failed',   value: `${failed}`,                         inline: true }
+    )
+    .setTimestamp()
+  );
+
+  return interaction.editReply({
+    embeds: [createSuccessEmbed(
+      'Nodes Posted',
+      `Posted to ${postedChannels.join(', ')}.${failed ? `\n⚠️ Failed to post to ${failed} channel(s).` : ''}`
+    )]
+  });
+}
+
+// ── Admin: Edit Nodes (panel button) ─────────────────────────────────────────
+
+async function handleAdminEditNodes(interaction) {
+  const channelIds = getNodesChannelIds();
+
+  if (!channelIds.length) {
+    return interaction.reply({
+      embeds: [createErrorEmbed('Config Error', 'NODES_CHANNELS is not set in .env.')],
+      flags: 64
+    });
+  }
+
+  // Find current content from the first available channel
+  let currentFields = DEFAULT_NODES;
+  for (const channelId of channelIds) {
+    try {
+      const ch  = await interaction.client.channels.fetch(channelId);
+      const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === 'NODES'));
+      if (msg?.embeds[0]?.fields?.length) {
+        currentFields = msg.embeds[0].fields;
+        break;
+      }
+    } catch (_) {}
+  }
+
+  const getValue = (index) => currentFields[index]?.value ?? '';
+
+  const modal = new ModalBuilder()
+    .setCustomId('nodes_edit')
+    .setTitle('Edit Nodes');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_nw')
+        .setLabel('North / West HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(0))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_mid')
+        .setLabel('Mid HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(1))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_se')
+        .setLabel('South / East HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(2))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_arty')
+        .setLabel('Arty')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(3))
+        .setMaxLength(500)
+        .setRequired(true)
+    )
+  );
+
+  await interaction.showModal(modal);
+}
+
+module.exports = { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes };

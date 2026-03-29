@@ -13,13 +13,14 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,  // required for channel.messages.fetch() in admin tools
   ]
 });
 
 client.commands = new Collection();
 
 const loadCommands = require('./handlers/commandHandler');
-const loadEvents = require('./handlers/eventHandler');
+const loadEvents   = require('./handlers/eventHandler');
 
 loadCommands(client);
 loadEvents(client);
