@@ -1,17 +1,8 @@
 /**
  * rotationHandler.js — Handles Map Rotation post and edit interactions.
  *
- * Rotation is posted as a plain Discord message (not an embed) so that
- * ## markdown headings render as large section headers in Discord.
- *
- * Fixes applied:
- *  1. DST accuracy: getWarsawOffsetHours() uses Intl/toLocaleString instead of
- *     a hardcoded month-number approximation.
- *  2. Edit round-trip: raw event lines (DD/MM/YYYY - MapName) are persisted in
- *     rotationStore so the Edit modal always shows human-readable dates.
- *  3. Month headers use ## markdown — works in plain messages, not embeds.
- *  4. Message ID is stored so the bot can find the rotation message directly
- *     without scanning channel history.
+ * Rotation is posted as a Discord embed.
+ * Raw event lines are persisted in /tmp/ for round-trip editing.
  */
 
 const {
@@ -54,7 +45,7 @@ function getDefaultRotationData() {
 
 /**
  * Returns the UTC offset for Europe/Warsaw at the given date, in hours.
- * Uses Intl to correctly handle DST transitions (last Sunday of March/October).
+ * Uses Intl to correctly handle DST transitions.
  */
 function getWarsawOffsetHours(date) {
   const utcMs    = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' })).getTime();
@@ -84,17 +75,33 @@ function parseEventLines(text) {
 }
 
 /**
- * Builds the plain-text rotation message content.
- * ## headings render large in regular Discord messages.
+ * Builds the Map Rotation embed.
  */
-function buildRotationContent(data) {
-  return [
-    `## ${data.month1Header}`,
-    data.month1Events || '—',
-    '',
-    `## ${data.month2Header}`,
-    data.month2Events || '—'
-  ].join('\n');
+function buildRotationEmbed(data) {
+  return new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('🗺️ Map Rotation')
+    .addFields(
+      { name: `📅 ${data.month1Header}`, value: data.month1Events || '— No events scheduled —' },
+      { name: `📅 ${data.month2Header}`, value: data.month2Events || '— No events scheduled —' }
+    );
+}
+
+/**
+ * Scans the last 50 messages in a channel to find an existing rotation embed
+ * (used as fallback when the message ID is not stored in /tmp/).
+ */
+async function findRotationMessage(channel) {
+  try {
+    const messages = await channel.messages.fetch({ limit: 50 });
+    return messages.find(m =>
+      m.author.bot &&
+      m.embeds.length > 0 &&
+      m.embeds[0].title === '🗺️ Map Rotation'
+    ) ?? null;
+  } catch (_) {
+    return null;
+  }
 }
 
 // ── Map Rotation Modal Submit ─────────────────────────────────────────────────
@@ -114,14 +121,13 @@ async function handleRotationModalSubmit(interaction) {
   const month1Events = parseEventLines(month1Raw);
   const month2Events = parseEventLines(month2Raw);
 
-  const content = buildRotationContent({ month1Header, month1Events, month2Header, month2Events });
+  const embed = buildRotationEmbed({ month1Header, month1Events, month2Header, month2Events });
 
   try {
     const ch  = await interaction.client.channels.fetch(channelId);
     const msg = await ch.messages.fetch(messageId);
 
-    // Edit as plain message (no embeds).
-    await msg.edit({ content, embeds: [] });
+    await msg.edit({ embeds: [embed], content: null });
 
     // Persist raw input for round-trip editing.
     saveRotationRaw(messageId, { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw });
@@ -130,10 +136,10 @@ async function handleRotationModalSubmit(interaction) {
 
     await sendLog(interaction.client, new EmbedBuilder()
       .setColor(0x011327)
-      .setTitle('\uD83D\uDDFA\uFE0F Map Rotation Edited')
+      .setTitle('🗺️ Map Rotation Edited')
       .addFields(
-        { name: '\uD83D\uDC64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-        { name: '\uD83D\uDCCC Channel', value: `<#${channelId}>`,           inline: true }
+        { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+        { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
       )
       .setTimestamp()
     );
@@ -168,11 +174,10 @@ async function handleAdminPostRotation(interaction) {
     });
   }
 
-  const data    = getDefaultRotationData();
-  const content = buildRotationContent(data);
-  const msg     = await ch.send({ content });
+  const data  = getDefaultRotationData();
+  const embed = buildRotationEmbed(data);
+  const msg   = await ch.send({ embeds: [embed] });
 
-  // Persist both the message ID and the default raw content.
   saveRotationMsgId(channelId, msg.id);
   saveRotationRaw(msg.id, data);
 
@@ -180,10 +185,10 @@ async function handleAdminPostRotation(interaction) {
 
   await sendLog(interaction.client, new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('\uD83D\uDDFA\uFE0F Map Rotation Posted')
+    .setTitle('🗺️ Map Rotation Posted')
     .addFields(
-      { name: '\uD83D\uDC64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-      { name: '\uD83D\uDCCC Channel', value: `<#${channelId}>`,           inline: true }
+      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
     )
     .setTimestamp()
   );
@@ -196,12 +201,8 @@ async function handleAdminPostRotation(interaction) {
 // ── Admin: Edit Map Rotation (panel button) ───────────────────────────────────
 
 async function handleAdminEditRotation(interaction) {
-  // IMPORTANT: Discord requires showModal() to be called within 3 seconds of
-  // receiving the interaction. We must NOT make any async Discord API calls
-  // (channel/message fetches) before calling showModal() — they can exceed
-  // the timeout and cause "An error occurred." errors.
-  //
-  // Instead, we load everything we need from the local file store (instant, sync).
+  // IMPORTANT: Discord requires showModal() within 3 seconds.
+  // Load everything from /tmp/ (instant) — no async Discord API calls before modal.
 
   const channelId = getMapRotationChannelId();
   if (!channelId) {
@@ -211,16 +212,33 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  // Load stored message ID from disk — no Discord API calls needed.
-  const storedMsgId = loadRotationMsgId(channelId);
+  // Load stored message ID from /tmp/ — no Discord API calls needed.
+  let storedMsgId = loadRotationMsgId(channelId);
+
   if (!storedMsgId) {
-    return interaction.reply({
-      content: '❌ No Map Rotation message found. Post one first using **Post Rotation**.',
-      flags: 64
+    // Fallback: scan channel for existing rotation embed (happens after bot restart).
+    // This is async, but only runs once when /tmp/ is empty (e.g. after restart).
+    await interaction.deferReply({ flags: 64 });
+    const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
+    if (ch) {
+      const found = await findRotationMessage(ch);
+      if (found) {
+        storedMsgId = found.id;
+        saveRotationMsgId(channelId, found.id);
+      }
+    }
+    if (!storedMsgId) {
+      return interaction.editReply({
+        content: '❌ No Map Rotation message found. Post one first using **Post Rotation**.',
+      });
+    }
+    // Re-open modal after deferred reply isn't possible — inform user instead.
+    return interaction.editReply({
+      embeds: [createSuccessEmbed('Ready', 'Message found! Please click **Edit Rotation** again to open the editor.')]
     });
   }
 
-  // Load persisted raw data from disk (also instant).
+  // Load persisted raw data from /tmp/ (also instant).
   const data = loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
 
   const modal = new ModalBuilder()
