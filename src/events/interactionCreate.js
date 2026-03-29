@@ -196,12 +196,16 @@ function parseEventLines(text) {
 }
 
 function buildRotationEmbed(data) {
+  // Prepend a blank line (zero-width space + newline) to create visual spacing
+  // between the month header (field name) and the first event line (field value).
+  const pad = (text) => `\u200B\n${text || '—'}`;
+
   return new EmbedBuilder()
     .setAuthor({ name: 'MWF Map Rotation', iconURL: THUMBNAIL_URL })
     .setColor(0x011327)
     .addFields(
-      { name: data.month1Header, value: data.month1Events || '—', inline: false },
-      { name: data.month2Header, value: data.month2Events || '—', inline: false }
+      { name: data.month1Header, value: pad(data.month1Events), inline: false },
+      { name: data.month2Header, value: pad(data.month2Events), inline: false }
     );
 }
 
@@ -990,12 +994,18 @@ async function handleAdminEditRotation(interaction) {
   }
 
   const fields = msg.embeds[0]?.fields ?? [];
+
+  // Strip the leading zero-width space + newline added by buildRotationEmbed
+  // so the modal shows the raw event lines (e.g. "01/04/2026 - Utah") not the
+  // parsed Discord timestamps that cannot be re-edited.
+  const stripPad = (str) => str.replace(/^\u200B\n/, '');
+
   const data = fields.length >= 2
     ? {
         month1Header: fields[0].name,
-        month1Events: fields[0].value,
+        month1Events: stripPad(fields[0].value),
         month2Header: fields[1].name,
-        month2Events: fields[1].value
+        month2Events: stripPad(fields[1].value)
       }
     : getDefaultRotationData();
 
