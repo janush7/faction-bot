@@ -1,13 +1,17 @@
 /**
- * rotationHandler.js — Handles Map Rotation embed post and edit interactions.
+ * rotationHandler.js — Handles Map Rotation post and edit interactions.
+ *
+ * Rotation is posted as a plain Discord message (not an embed) so that
+ * ## markdown headings render as large section headers in Discord.
  *
  * Fixes applied:
  *  1. DST accuracy: getWarsawOffsetHours() uses Intl/toLocaleString instead of
- *     a hardcoded month-number approximation that mis-fires near DST transitions.
+ *     a hardcoded month-number approximation.
  *  2. Edit round-trip: raw event lines (DD/MM/YYYY - MapName) are persisted in
- *     rotationStore so the Edit Rotation modal always shows the human-readable
- *     date instead of the rendered <t:unix:F> Discord timestamps.
- *  3. Month headers use ## markdown heading so they render larger in Discord.
+ *     rotationStore so the Edit modal always shows human-readable dates.
+ *  3. Month headers use ## markdown — works in plain messages, not embeds.
+ *  4. Message ID is stored so the bot can find the rotation message directly
+ *     without scanning channel history.
  */
 
 const {
@@ -19,9 +23,13 @@ const {
 } = require('discord.js');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
-const { THUMBNAIL_URL } = require('../../config/constants');
-const { sendLog, findLastBotMessage } = require('./shared');
-const { saveRotationRaw, loadRotationRaw } = require('../../utils/rotationStore');
+const { sendLog } = require('./shared');
+const {
+  saveRotationRaw,
+  loadRotationRaw,
+  saveRotationMsgId,
+  loadRotationMsgId
+} = require('../../utils/rotationStore');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,11 +54,7 @@ function getDefaultRotationData() {
 
 /**
  * Returns the UTC offset for Europe/Warsaw at the given date, in hours.
- * Uses the browser-independent Intl approach to handle DST transitions
- * correctly (last Sunday of March / last Sunday of October).
- *
- * @param {Date} date
- * @returns {number}  e.g. 1 (CET) or 2 (CEST)
+ * Uses Intl to correctly handle DST transitions (last Sunday of March/October).
  */
 function getWarsawOffsetHours(date) {
   const utcMs    = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' })).getTime();
@@ -60,11 +64,7 @@ function getWarsawOffsetHours(date) {
 
 /**
  * Converts lines matching "DD/MM/YYYY - MapName" to Discord timestamps.
- * Lines that don't match the pattern are left unchanged.
  * Event time is assumed to be 20:00 Europe/Warsaw.
- *
- * @param {string} text
- * @returns {string}
  */
 function parseEventLines(text) {
   return text.split('\n').map(line => {
@@ -72,7 +72,6 @@ function parseEventLines(text) {
     if (!match) return line.trim();
     const [, dd, mm, yyyy, mapName] = match;
 
-    // Build a Date at 20:00 UTC on that day, then adjust for Warsaw offset.
     const probe       = new Date(`${yyyy}-${mm}-${dd}T20:00:00Z`);
     const offsetHours = getWarsawOffsetHours(probe);
     const utcHour     = 20 - offsetHours;
@@ -85,22 +84,17 @@ function parseEventLines(text) {
 }
 
 /**
- * Builds the Map Rotation embed.
- * Month headers use ## markdown so they render as large headings in Discord.
+ * Builds the plain-text rotation message content.
+ * ## headings render large in regular Discord messages.
  */
-function buildRotationEmbed(data) {
-  const description = [
+function buildRotationContent(data) {
+  return [
     `## ${data.month1Header}`,
     data.month1Events || '—',
     '',
     `## ${data.month2Header}`,
     data.month2Events || '—'
   ].join('\n');
-
-  return new EmbedBuilder()
-    .setAuthor({ name: 'MWF Map Rotation', iconURL: THUMBNAIL_URL })
-    .setColor(0x011327)
-    .setDescription(description);
 }
 
 // ── Map Rotation Modal Submit ─────────────────────────────────────────────────
@@ -108,7 +102,7 @@ function buildRotationEmbed(data) {
 async function handleRotationModalSubmit(interaction) {
   await interaction.deferReply({ flags: 64 });
 
-  const parts  = interaction.customId.split(':');
+  const parts     = interaction.customId.split(':');
   const channelId = parts[1];
   const messageId = parts[2];
 
@@ -120,17 +114,19 @@ async function handleRotationModalSubmit(interaction) {
   const month1Events = parseEventLines(month1Raw);
   const month2Events = parseEventLines(month2Raw);
 
-  const updatedEmbed = buildRotationEmbed({ month1Header, month1Events, month2Header, month2Events });
+  const content = buildRotationContent({ month1Header, month1Events, month2Header, month2Events });
 
   try {
     const ch  = await interaction.client.channels.fetch(channelId);
     const msg = await ch.messages.fetch(messageId);
-    await msg.edit({ embeds: [updatedEmbed] });
 
-    // Persist raw input so the Edit modal can round-trip correctly.
+    // Edit as plain message (no embeds).
+    await msg.edit({ content, embeds: [] });
+
+    // Persist raw input for round-trip editing.
     saveRotationRaw(messageId, { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw });
 
-    logger.info(`${interaction.user.tag} updated Map Rotation embed in #${ch.name}`);
+    logger.info(`${interaction.user.tag} updated Map Rotation in #${ch.name}`);
 
     await sendLog(interaction.client, new EmbedBuilder()
       .setColor(0x011327)
@@ -143,7 +139,7 @@ async function handleRotationModalSubmit(interaction) {
     );
 
     return interaction.editReply({
-      embeds: [createSuccessEmbed('Map Rotation Updated', 'The embed has been updated successfully.')]
+      embeds: [createSuccessEmbed('Map Rotation Updated', 'The rotation has been updated successfully.')]
     });
   } catch (err) {
     logger.error('Failed to edit Map Rotation:', err);
@@ -172,11 +168,12 @@ async function handleAdminPostRotation(interaction) {
     });
   }
 
-  const data  = getDefaultRotationData();
-  const embed = buildRotationEmbed(data);
-  const msg   = await ch.send({ embeds: [embed] });
+  const data    = getDefaultRotationData();
+  const content = buildRotationContent(data);
+  const msg     = await ch.send({ content });
 
-  // Seed the store with the default raw content for immediate round-trip support.
+  // Persist both the message ID and the default raw content.
+  saveRotationMsgId(channelId, msg.id);
   saveRotationRaw(msg.id, data);
 
   logger.info(`${interaction.user.tag} posted Map Rotation to #${ch.name}`);
@@ -215,7 +212,22 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.author?.name === 'MWF Map Rotation'));
+  // Look up the stored message ID first (fast path).
+  let msg = null;
+  const storedMsgId = loadRotationMsgId(channelId);
+  if (storedMsgId) {
+    msg = await ch.messages.fetch(storedMsgId).catch(() => null);
+  }
+
+  // Fallback: scan last 50 messages for a rotation message (## heading pattern).
+  if (!msg) {
+    const fetched = await ch.messages.fetch({ limit: 50 });
+    msg = fetched.find(m =>
+      m.author.id === interaction.client.user.id &&
+      /^## /.test(m.content)
+    ) ?? null;
+    if (msg) saveRotationMsgId(channelId, msg.id); // cache for next time
+  }
 
   if (!msg) {
     return interaction.reply({
@@ -224,17 +236,14 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  // Prefer the persisted raw data (round-trip safe).
-  // Fall back to parsing the embed description (legacy / old-format embeds).
+  // Load persisted raw data (preferred) or fall back to parsing the message content.
   let data = loadRotationRaw(msg.id);
 
   if (!data) {
-    const description = msg.embeds[0]?.description ?? '';
-    // Parse sections split by ## headings
-    const sections = description.split(/^## /m).filter(Boolean);
+    const sections = msg.content.split(/^## /m).filter(Boolean);
     if (sections.length >= 2) {
       const parseSection = (section) => {
-        const lines = section.split('\n');
+        const lines  = section.split('\n');
         const header = lines[0].trim();
         const events = lines.slice(1).join('\n').trim();
         return { header, events };
@@ -248,17 +257,7 @@ async function handleAdminEditRotation(interaction) {
         month2Events: s2.events
       };
     } else {
-      // Last resort: try old field-based format
-      const fields   = msg.embeds[0]?.fields ?? [];
-      const stripPad = (str) => str.replace(/^\u200B\n/, '');
-      data = fields.length >= 2
-        ? {
-            month1Header: fields[0].name,
-            month1Events: stripPad(fields[0].value),
-            month2Header: fields[1].name,
-            month2Events: stripPad(fields[1].value)
-          }
-        : getDefaultRotationData();
+      data = getDefaultRotationData();
     }
   }
 

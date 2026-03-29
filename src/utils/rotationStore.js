@@ -1,54 +1,55 @@
 /**
  * rotationStore.js
  *
- * Persists raw (human-readable) Map Rotation event lines to disk so that
- * the Edit Rotation modal can round-trip correctly.
- *
- * When a rotation is saved the raw input (e.g. "01/04/2026 - Utah") is stored
- * here keyed by Discord message ID. When the admin opens Edit Rotation we load
- * the raw text instead of reading back the rendered <t:unix:F> timestamps from
- * the embed, which cannot be converted back to editable dates.
+ * Persists:
+ *  1. Raw (human-readable) Map Rotation event lines keyed by message ID,
+ *     so the Edit Rotation modal can round-trip correctly.
+ *  2. The rotation message ID per channel, so the bot can locate the
+ *     rotation message without scanning channel history.
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-const STORE_PATH = path.join(process.cwd(), 'data', 'rotation_raw.json');
+const RAW_PATH = path.join(process.cwd(), 'data', 'rotation_raw.json');
+const MSG_PATH = path.join(process.cwd(), 'data', 'rotation_msg.json');
 
-function _read() {
+function _read(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (_) {
     return {};
   }
 }
 
-function _write(store) {
-  const dir = path.dirname(STORE_PATH);
+function _write(filePath, data) {
+  const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-/**
- * Save raw event text for a given message ID.
- * @param {string} messageId
- * @param {{ month1Header, month1Events, month2Header, month2Events }} data
- */
+// ── Raw event text (for edit round-trip) ─────────────────────────────────────
+
 function saveRotationRaw(messageId, data) {
-  const store = _read();
+  const store = _read(RAW_PATH);
   store[messageId] = data;
-  _write(store);
+  _write(RAW_PATH, store);
 }
 
-/**
- * Load raw event text for a given message ID.
- * Returns null if not found (e.g. embed was posted before this fix was deployed).
- * @param {string} messageId
- * @returns {{ month1Header, month1Events, month2Header, month2Events } | null}
- */
 function loadRotationRaw(messageId) {
-  const store = _read();
-  return store[messageId] ?? null;
+  return _read(RAW_PATH)[messageId] ?? null;
 }
 
-module.exports = { saveRotationRaw, loadRotationRaw };
+// ── Message ID per channel (so we can fetch it directly) ─────────────────────
+
+function saveRotationMsgId(channelId, messageId) {
+  const store = _read(MSG_PATH);
+  store[channelId] = messageId;
+  _write(MSG_PATH, store);
+}
+
+function loadRotationMsgId(channelId) {
+  return _read(MSG_PATH)[channelId] ?? null;
+}
+
+module.exports = { saveRotationRaw, loadRotationRaw, saveRotationMsgId, loadRotationMsgId };
