@@ -9,26 +9,53 @@ module.exports = {
   async execute(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('⚙️ Admin Panel')
-      .setDescription('Use the buttons below to manage the faction bot.')
-      .setColor(0x2f3136)
+      .setColor(0x011327)
       .addFields(
-        { name: '🔄 Reset Roles', value: 'Remove Allies/Axis roles from all members', inline: true },
-        { name: '📋 Reload Embed', value: 'Post a new faction selection embed', inline: true },
-        { name: '🧹 Clear Logs', value: 'Clear messages in the log channel', inline: true }
-      )
-      .setTimestamp();
+        { name: '📋 Faction',        value: 'Reload the faction embed or reset all roles', inline: false },
+        { name: '📸 Lineup',         value: 'Edit the caption of the last posted lineup',  inline: false },
+        { name: '🖥️ Server Details', value: 'Post or edit server details',                 inline: false },
+        { name: '🧹 Logs',           value: 'Clear messages in the log channel',           inline: false }
+      );
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('admin_reset')
-        .setLabel('Reset Roles')
-        .setStyle(ButtonStyle.Danger)
-        .setEmoji('🔄'),
+    // Row 1 — Faction
+    const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('admin_reload')
         .setLabel('Reload Embed')
         .setStyle(ButtonStyle.Primary)
         .setEmoji('📋'),
+      new ButtonBuilder()
+        .setCustomId('admin_reset')
+        .setLabel('Reset Roles')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🔁')
+    );
+
+    // Row 2 — Lineup
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('admin_edit_caption')
+        .setLabel('Edit Caption')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✏️')
+    );
+
+    // Row 3 — Server Details
+    const row3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('admin_post_server')
+        .setLabel('Post Server Details')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('📤'),
+      new ButtonBuilder()
+        .setCustomId('admin_edit_server')
+        .setLabel('Edit Server Details')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✏️')
+    );
+
+    // Row 4 — Logs
+    const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('admin_clearlogs')
         .setLabel('Clear Logs')
@@ -36,6 +63,10 @@ module.exports = {
         .setEmoji('🧹')
     );
 
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    await interaction.reply({
+      embeds: [embed],
+      components: [row1, row2, row3, row4],
+      flags: 64
+    });
   }
 };
