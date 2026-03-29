@@ -15,6 +15,7 @@ const {
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { sendLog } = require('./shared');
+const { THUMBNAIL_URL } = require('../../config/constants');
 const {
   saveRotationRaw,
   loadRotationRaw,
@@ -80,10 +81,11 @@ function parseEventLines(text) {
 function buildRotationEmbed(data) {
   return new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('🗺️ Map Rotation')
+    .setTitle('Map Rotation')
+    .setThumbnail(THUMBNAIL_URL)
     .addFields(
-      { name: `📅 ${data.month1Header}`, value: data.month1Events || '— No events scheduled —' },
-      { name: `📅 ${data.month2Header}`, value: data.month2Events || '— No events scheduled —' }
+      { name: data.month1Header, value: data.month1Events || '— No events scheduled —' },
+      { name: data.month2Header, value: data.month2Events || '— No events scheduled —' }
     );
 }
 
@@ -97,7 +99,7 @@ async function findRotationMessage(channel) {
     return messages.find(m =>
       m.author.bot &&
       m.embeds.length > 0 &&
-      m.embeds[0].title === '🗺️ Map Rotation'
+      m.embeds[0].title === 'Map Rotation'
     ) ?? null;
   } catch (_) {
     return null;
@@ -136,10 +138,10 @@ async function handleRotationModalSubmit(interaction) {
 
     await sendLog(interaction.client, new EmbedBuilder()
       .setColor(0x011327)
-      .setTitle('🗺️ Map Rotation Edited')
+      .setTitle('Map Rotation Edited')
       .addFields(
-        { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-        { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+        { name: 'Admin',   value: `<@${interaction.user.id}>`, inline: true },
+        { name: 'Channel', value: `<#${channelId}>`,           inline: true }
       )
       .setTimestamp()
     );
@@ -185,10 +187,10 @@ async function handleAdminPostRotation(interaction) {
 
   await sendLog(interaction.client, new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('🗺️ Map Rotation Posted')
+    .setTitle('Map Rotation Posted')
     .addFields(
-      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+      { name: 'Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: 'Channel', value: `<#${channelId}>`,           inline: true }
     )
     .setTimestamp()
   );
