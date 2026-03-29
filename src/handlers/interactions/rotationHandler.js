@@ -77,12 +77,12 @@ function parseEventLines(text) {
 
 /**
  * Builds the Map Rotation embed.
+ * Uses setAuthor so the logo appears on the left next to the title.
  */
 function buildRotationEmbed(data) {
   return new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('Map Rotation')
-    .setThumbnail(THUMBNAIL_URL)
+    .setAuthor({ name: 'Map Rotation', iconURL: THUMBNAIL_URL })
     .addFields(
       { name: data.month1Header, value: data.month1Events || '— No events scheduled —' },
       { name: data.month2Header, value: data.month2Events || '— No events scheduled —' }
@@ -99,7 +99,7 @@ async function findRotationMessage(channel) {
     return messages.find(m =>
       m.author.bot &&
       m.embeds.length > 0 &&
-      m.embeds[0].title === 'Map Rotation'
+      m.embeds[0].author?.name === 'Map Rotation'
     ) ?? null;
   } catch (_) {
     return null;
