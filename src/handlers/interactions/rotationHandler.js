@@ -196,6 +196,13 @@ async function handleAdminPostRotation(interaction) {
 // ── Admin: Edit Map Rotation (panel button) ───────────────────────────────────
 
 async function handleAdminEditRotation(interaction) {
+  // IMPORTANT: Discord requires showModal() to be called within 3 seconds of
+  // receiving the interaction. We must NOT make any async Discord API calls
+  // (channel/message fetches) before calling showModal() — they can exceed
+  // the timeout and cause "An error occurred." errors.
+  //
+  // Instead, we load everything we need from the local file store (instant, sync).
+
   const channelId = getMapRotationChannelId();
   if (!channelId) {
     return interaction.reply({
@@ -204,65 +211,20 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
-  if (!ch) {
-    return interaction.reply({
-      embeds: [createErrorEmbed('Channel Not Found', `Could not find channel <#${channelId}>. Check MAP_ROTATION_CHANNEL in .env.`)],
-      flags: 64
-    });
-  }
-
-  // Look up the stored message ID first (fast path).
-  let msg = null;
+  // Load stored message ID from disk — no Discord API calls needed.
   const storedMsgId = loadRotationMsgId(channelId);
-  if (storedMsgId) {
-    msg = await ch.messages.fetch(storedMsgId).catch(() => null);
-  }
-
-  // Fallback: scan last 50 messages for a rotation message (## heading pattern).
-  if (!msg) {
-    const fetched = await ch.messages.fetch({ limit: 50 });
-    msg = fetched.find(m =>
-      m.author.id === interaction.client.user.id &&
-      /^## /.test(m.content)
-    ) ?? null;
-    if (msg) saveRotationMsgId(channelId, msg.id); // cache for next time
-  }
-
-  if (!msg) {
+  if (!storedMsgId) {
     return interaction.reply({
-      content: '\u274C No Map Rotation message found in the channel. Post one first using **Post Rotation**.',
+      content: '❌ No Map Rotation message found. Post one first using **Post Rotation**.',
       flags: 64
     });
   }
 
-  // Load persisted raw data (preferred) or fall back to parsing the message content.
-  let data = loadRotationRaw(msg.id);
-
-  if (!data) {
-    const sections = msg.content.split(/^## /m).filter(Boolean);
-    if (sections.length >= 2) {
-      const parseSection = (section) => {
-        const lines  = section.split('\n');
-        const header = lines[0].trim();
-        const events = lines.slice(1).join('\n').trim();
-        return { header, events };
-      };
-      const s1 = parseSection(sections[0]);
-      const s2 = parseSection(sections[1]);
-      data = {
-        month1Header: s1.header,
-        month1Events: s1.events,
-        month2Header: s2.header,
-        month2Events: s2.events
-      };
-    } else {
-      data = getDefaultRotationData();
-    }
-  }
+  // Load persisted raw data from disk (also instant).
+  const data = loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
 
   const modal = new ModalBuilder()
-    .setCustomId(`rotation_edit:${ch.id}:${msg.id}`)
+    .setCustomId(`rotation_edit:${channelId}:${storedMsgId}`)
     .setTitle('Edit Map Rotation');
 
   modal.addComponents(
