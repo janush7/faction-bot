@@ -17,7 +17,7 @@ module.exports = {
         await command.execute(interaction);
       } catch (error) {
         logger.error(`Error executing /${interaction.commandName}:`, error);
-        const reply = { content: '❌ An error occurred.', ephemeral: true };
+        const reply = { content: '❌ An error occurred.', flags: 64 };
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(reply).catch(() => {});
         } else {
@@ -64,7 +64,7 @@ module.exports = {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({
             embeds: [createErrorEmbed('Permission Denied', 'Only administrators can use these controls.')],
-            ephemeral: true
+            flags: 64
           });
         }
 
@@ -75,7 +75,7 @@ module.exports = {
 
     } catch (error) {
       logger.error('Error handling button interaction:', error);
-      const reply = { content: '❌ An error occurred.', ephemeral: true };
+      const reply = { content: '❌ An error occurred.', flags: 64 };
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp(reply).catch(() => {});
       } else {
@@ -172,10 +172,10 @@ async function handleLineupCaptionSubmit(interaction) {
     await msg.edit({ embeds: [updated] });
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
-    await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, ephemeral: true });
+    await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, flags: 64 });
   } catch (err) {
     logger.error('Failed to edit lineup caption:', err);
-    await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', ephemeral: true });
+    await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
   }
 }
 
@@ -252,13 +252,13 @@ async function handleServerModalSubmit(interaction) {
     logger.info(`${interaction.user.tag} updated server details: ${newName} / ${newPass}`);
     await interaction.reply({
       content: `✅ Server details updated!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
-      ephemeral: true
+      flags: 64
     });
   } catch (err) {
     logger.error('Failed to edit server details:', err);
     await interaction.reply({
       content: '❌ Could not edit the message. It may be too old or I lack permissions.',
-      ephemeral: true
+      flags: 64
     });
   }
 }
@@ -278,14 +278,14 @@ async function handleFactionSelection(interaction, faction) {
   if (!selectedRoleId) {
     return interaction.reply({
       embeds: [createErrorEmbed('Config Error', 'Faction roles are not configured. Ask an admin to set ALLIES_ROLE / AXIS_ROLE.')],
-      ephemeral: true
+      flags: 64
     });
   }
 
   if (member.roles.cache.has(selectedRoleId)) {
     return interaction.reply({
       content: `⚠️ You are already on **${factionLabel}**!`,
-      ephemeral: true
+      flags: 64
     });
   }
 
@@ -315,12 +315,12 @@ async function handleFactionSelection(interaction, faction) {
 
   return interaction.reply({
     content: `✅ You have joined **${factionLabel}**! Good luck on the battlefield!`,
-    ephemeral: true
+    flags: 64
   });
 }
 
 async function handleAdminReset(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const alliesRoleId = process.env.ALLIES_ROLE;
   const axisRoleId  = process.env.AXIS_ROLE;
@@ -329,27 +329,33 @@ async function handleAdminReset(interaction) {
   let count = 0;
   const errors = [];
 
-  // Fetch only members who actually have each role — much faster than fetching everyone
+  // Fetch all members once into cache
+  await guild.members.fetch();
+
   const rolesToReset = [alliesRoleId, axisRoleId].filter(Boolean);
 
   for (const roleId of rolesToReset) {
-    const role = await guild.roles.fetch(roleId).catch(() => null);
+    const role = guild.roles.cache.get(roleId);
     if (!role) continue;
 
-    // Fetch members with this role
-    const members = await guild.members.fetch({ force: false });
-    const withRole = members.filter(m => m.roles.cache.has(roleId));
+    // role.members uses the cache — no extra API call needed
+    const membersWithRole = [...role.members.values()];
+    if (membersWithRole.length === 0) continue;
 
-    for (const [, member] of withRole) {
-      await member.roles.remove(roleId).catch(e => {
-        errors.push(`${member.user.tag}: ${e.message}`);
-      });
-      count++;
+    // Remove roles in parallel for speed
+    const results = await Promise.allSettled(
+      membersWithRole.map(member => member.roles.remove(roleId))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled') {
+        count++;
+      } else {
+        errors.push(`${membersWithRole[i].user.tag}: ${results[i].reason?.message}`);
+      }
     }
   }
 
-  // Deduplicate count (member could have had both roles)
-  // count here is number of role removals, not unique members
   logger.info(`${interaction.user.tag} reset faction roles — ${count} role removal(s), ${errors.length} error(s)`);
 
   const logEmbed = new EmbedBuilder()
@@ -370,7 +376,7 @@ async function handleAdminReset(interaction) {
 }
 
 async function handleAdminReload(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const channelId = process.env.FACTION_CHANNEL;
   if (!channelId) {
@@ -416,7 +422,7 @@ async function handleAdminReload(interaction) {
 }
 
 async function handleAdminClearLogs(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const logChannelId = process.env.ADMIN_LOG_CHANNEL;
   if (!logChannelId) {
