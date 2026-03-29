@@ -324,38 +324,48 @@ async function handleAdminReset(interaction) {
 
   const alliesRoleId = process.env.ALLIES_ROLE;
   const axisRoleId  = process.env.AXIS_ROLE;
+  const guild = interaction.guild;
 
-  const members = await interaction.guild.members.fetch();
   let count = 0;
+  const errors = [];
 
-  for (const [, member] of members) {
-    let changed = false;
-    if (alliesRoleId && member.roles.cache.has(alliesRoleId)) {
-      await member.roles.remove(alliesRoleId).catch(() => {});
-      changed = true;
+  // Fetch only members who actually have each role — much faster than fetching everyone
+  const rolesToReset = [alliesRoleId, axisRoleId].filter(Boolean);
+
+  for (const roleId of rolesToReset) {
+    const role = await guild.roles.fetch(roleId).catch(() => null);
+    if (!role) continue;
+
+    // Fetch members with this role
+    const members = await guild.members.fetch({ force: false });
+    const withRole = members.filter(m => m.roles.cache.has(roleId));
+
+    for (const [, member] of withRole) {
+      await member.roles.remove(roleId).catch(e => {
+        errors.push(`${member.user.tag}: ${e.message}`);
+      });
+      count++;
     }
-    if (axisRoleId && member.roles.cache.has(axisRoleId)) {
-      await member.roles.remove(axisRoleId).catch(() => {});
-      changed = true;
-    }
-    if (changed) count++;
   }
 
-  logger.info(`${interaction.user.tag} reset faction roles for ${count} member(s)`);
+  // Deduplicate count (member could have had both roles)
+  // count here is number of role removals, not unique members
+  logger.info(`${interaction.user.tag} reset faction roles — ${count} role removal(s), ${errors.length} error(s)`);
 
   const logEmbed = new EmbedBuilder()
     .setColor(0x011327)
     .setTitle('🔁 Manual Faction Reset')
     .addFields(
-      { name: '👤 Admin',        value: `<@${interaction.user.id}>`, inline: true },
-      { name: '✅ Roles Removed', value: `${count} member(s)`,       inline: true }
+      { name: '👤 Admin',           value: `<@${interaction.user.id}>`, inline: true },
+      { name: '✅ Roles Removed',    value: `${count}`,                  inline: true },
+      { name: '❌ Errors',           value: `${errors.length}`,          inline: true }
     )
     .setTimestamp();
 
   await sendLog(interaction.client, logEmbed);
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Roles Reset', `Removed faction roles from **${count}** member(s).`)]
+    embeds: [createSuccessEmbed('Roles Reset', `Removed **${count}** faction role(s).${errors.length ? `\n⚠️ ${errors.length} error(s) occurred.` : ''}`)]
   });
 }
 
