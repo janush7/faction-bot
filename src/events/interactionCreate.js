@@ -52,6 +52,7 @@ module.exports = {
       if (interaction.customId.startsWith('lineup_caption:'))  return await handleLineupCaptionSubmit(interaction);
       if (interaction.customId.startsWith('lineup_server:'))   return await handleServerModalSubmit(interaction);
       if (interaction.customId === 'nodes_edit')               return await handleNodesModalSubmit(interaction);
+      if (interaction.customId.startsWith('rotation_edit:'))   return await handleRotationModalSubmit(interaction);
       return;
     }
 
@@ -77,16 +78,18 @@ module.exports = {
           });
         }
 
-        if (customId === 'admin_reset')         return await handleAdminResetConfirm(interaction);
-        if (customId === 'admin_reset_confirm') return await handleAdminReset(interaction);
-        if (customId === 'admin_reset_cancel')  return await handleAdminResetCancel(interaction);
-        if (customId === 'admin_reload')        return await handleAdminReload(interaction);
-        if (customId === 'admin_clearlogs')     return await handleAdminClearLogs(interaction);
-        if (customId === 'admin_post_server')   return await handleAdminPostServer(interaction);
-        if (customId === 'admin_edit_caption')  return await handleAdminEditCaption(interaction);
-        if (customId === 'admin_edit_server')   return await handleAdminEditServer(interaction);
-        if (customId === 'admin_post_nodes')    return await handleAdminPostNodes(interaction);
-        if (customId === 'admin_edit_nodes')    return await handleAdminEditNodes(interaction);
+        if (customId === 'admin_reset')          return await handleAdminResetConfirm(interaction);
+        if (customId === 'admin_reset_confirm')  return await handleAdminReset(interaction);
+        if (customId === 'admin_reset_cancel')   return await handleAdminResetCancel(interaction);
+        if (customId === 'admin_reload')         return await handleAdminReload(interaction);
+        if (customId === 'admin_clearlogs')      return await handleAdminClearLogs(interaction);
+        if (customId === 'admin_post_server')    return await handleAdminPostServer(interaction);
+        if (customId === 'admin_edit_caption')   return await handleAdminEditCaption(interaction);
+        if (customId === 'admin_edit_server')    return await handleAdminEditServer(interaction);
+        if (customId === 'admin_post_nodes')     return await handleAdminPostNodes(interaction);
+        if (customId === 'admin_edit_nodes')     return await handleAdminEditNodes(interaction);
+        if (customId === 'admin_post_rotation')  return await handleAdminPostRotation(interaction);
+        if (customId === 'admin_edit_rotation')  return await handleAdminEditRotation(interaction);
       }
 
     } catch (error) {
@@ -145,6 +148,58 @@ function buildNodesEmbed(fields) {
     .setColor(0x011327)
     .setThumbnail(THUMBNAIL_URL)
     .addFields(fields);
+}
+
+// ── Map Rotation Helpers ──────────────────────────────────────────────────────
+
+function getMapRotationChannelId() {
+  return process.env.MAP_ROTATION_CHANNEL || null;
+}
+
+function getDefaultRotationData() {
+  const now = new Date();
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const m1 = now.getMonth();
+  const m2 = (m1 + 1) % 12;
+  const y1 = now.getFullYear();
+  const y2 = m2 === 0 ? y1 + 1 : y1;
+  return {
+    month1Header: `${monthNames[m1]} ${y1}`,
+    month1Events: '— No events scheduled —',
+    month2Header: `${monthNames[m2]} ${y2}`,
+    month2Events: '— No events scheduled —'
+  };
+}
+
+/**
+ * Converts lines matching "DD/MM/YYYY - MapName" to Discord timestamps.
+ * Lines that don't match the pattern are left unchanged.
+ * Time is hardcoded to 20:00 Europe/Warsaw.
+ */
+function parseEventLines(text) {
+  return text.split('\n').map(line => {
+    const match = line.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(.+)$/);
+    if (!match) return line.trim();
+    const [, dd, mm, yyyy, mapName] = match;
+    const m = parseInt(mm, 10);
+    // Europe/Warsaw: CEST (UTC+2) April–October, CET (UTC+1) otherwise
+    const offsetHours = (m >= 4 && m <= 10) ? 2 : 1;
+    const utcHour = 20 - offsetHours;
+    const unix = Math.floor(
+      new Date(`${yyyy}-${mm}-${dd}T${String(utcHour).padStart(2, '0')}:00:00Z`).getTime() / 1000
+    );
+    return `<t:${unix}:F> - **${mapName.trim()}**`;
+  }).join('\n');
+}
+
+function buildRotationEmbed(data) {
+  return new EmbedBuilder()
+    .setAuthor({ name: 'MWF Map Rotation', iconURL: THUMBNAIL_URL })
+    .setColor(0x011327)
+    .addFields(
+      { name: data.month1Header, value: data.month1Events || '—', inline: false },
+      { name: data.month2Header, value: data.month2Events || '—', inline: false }
+    );
 }
 
 // ── Lineup Caption Edit (from /lineup ephemeral reply button) ─────────────────
@@ -297,6 +352,53 @@ async function handleNodesModalSubmit(interaction) {
   return interaction.editReply({
     embeds: [createSuccessEmbed('Nodes Updated', `Updated **${edited}** message(s).${failed ? `\n⚠️ ${failed} channel(s) had no existing NODES message.` : ''}`)]
   });
+}
+
+// ── Map Rotation Modal Submit ─────────────────────────────────────────────────
+
+async function handleRotationModalSubmit(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const parts = interaction.customId.split(':');
+  const channelId = parts[1];
+  const messageId = parts[2];
+
+  const month1Header = interaction.fields.getTextInputValue('month1_header');
+  const month1Raw    = interaction.fields.getTextInputValue('month1_events');
+  const month2Header = interaction.fields.getTextInputValue('month2_header');
+  const month2Raw    = interaction.fields.getTextInputValue('month2_events');
+
+  const month1Events = parseEventLines(month1Raw);
+  const month2Events = parseEventLines(month2Raw);
+
+  const updatedEmbed = buildRotationEmbed({ month1Header, month1Events, month2Header, month2Events });
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
+    const msg = await ch.messages.fetch(messageId);
+    await msg.edit({ embeds: [updatedEmbed] });
+
+    logger.info(`${interaction.user.tag} updated Map Rotation embed in #${ch.name}`);
+
+    await sendLog(interaction.client, new EmbedBuilder()
+      .setColor(0x011327)
+      .setTitle('🗺️ Map Rotation Edited')
+      .addFields(
+        { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+        { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+      )
+      .setTimestamp()
+    );
+
+    return interaction.editReply({
+      embeds: [createSuccessEmbed('Map Rotation Updated', 'The embed has been updated successfully.')]
+    });
+  } catch (err) {
+    logger.error('Failed to edit Map Rotation:', err);
+    return interaction.editReply({
+      embeds: [createErrorEmbed('Error', 'Could not edit the message. It may be too old or I lack permissions.')]
+    });
+  }
 }
 
 // ── Faction Selection ─────────────────────────────────────────────────────────
@@ -759,6 +861,130 @@ async function handleAdminEditNodes(interaction) {
         .setStyle(TextInputStyle.Paragraph)
         .setValue(getValue(3))
         .setMaxLength(500)
+        .setRequired(true)
+    )
+  );
+
+  await interaction.showModal(modal);
+}
+
+// ── Admin: Post Map Rotation ──────────────────────────────────────────────────
+
+async function handleAdminPostRotation(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const channelId = getMapRotationChannelId();
+  if (!channelId) {
+    return interaction.editReply({
+      embeds: [createErrorEmbed('Config Error', 'MAP_ROTATION_CHANNEL is not set in .env.')]
+    });
+  }
+
+  const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
+  if (!ch) {
+    return interaction.editReply({
+      embeds: [createErrorEmbed('Channel Not Found', `Could not find channel <#${channelId}>. Check MAP_ROTATION_CHANNEL in .env.`)]
+    });
+  }
+
+  const data = getDefaultRotationData();
+  const embed = buildRotationEmbed(data);
+  await ch.send({ embeds: [embed] });
+
+  logger.info(`${interaction.user.tag} posted Map Rotation to #${ch.name}`);
+
+  await sendLog(interaction.client, new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle('🗺️ Map Rotation Posted')
+    .addFields(
+      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '📌 Channel', value: `<#${channelId}>`,           inline: true }
+    )
+    .setTimestamp()
+  );
+
+  return interaction.editReply({
+    embeds: [createSuccessEmbed('Map Rotation Posted', `Posted to <#${channelId}>!\nUse **Edit Rotation** to fill in the events.`)]
+  });
+}
+
+// ── Admin: Edit Map Rotation (panel button) ───────────────────────────────────
+
+async function handleAdminEditRotation(interaction) {
+  const channelId = getMapRotationChannelId();
+  if (!channelId) {
+    return interaction.reply({
+      embeds: [createErrorEmbed('Config Error', 'MAP_ROTATION_CHANNEL is not set in .env.')],
+      flags: 64
+    });
+  }
+
+  const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
+  if (!ch) {
+    return interaction.reply({
+      embeds: [createErrorEmbed('Channel Not Found', `Could not find channel <#${channelId}>. Check MAP_ROTATION_CHANNEL in .env.`)],
+      flags: 64
+    });
+  }
+
+  const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.author?.name === 'MWF Map Rotation'));
+
+  if (!msg) {
+    return interaction.reply({
+      content: '❌ No Map Rotation message found in the channel. Post one first using **Post Rotation**.',
+      flags: 64
+    });
+  }
+
+  const fields = msg.embeds[0]?.fields ?? [];
+  const data = fields.length >= 2
+    ? {
+        month1Header: fields[0].name,
+        month1Events: fields[0].value,
+        month2Header: fields[1].name,
+        month2Events: fields[1].value
+      }
+    : getDefaultRotationData();
+
+  const modal = new ModalBuilder()
+    .setCustomId(`rotation_edit:${ch.id}:${msg.id}`)
+    .setTitle('Edit Map Rotation');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('month1_header')
+        .setLabel('Month 1 (e.g. April 2026)')
+        .setStyle(TextInputStyle.Short)
+        .setValue(data.month1Header)
+        .setMaxLength(50)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('month1_events')
+        .setLabel('Month 1 Events (DD/MM/YYYY - MapName)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(data.month1Events)
+        .setMaxLength(1000)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('month2_header')
+        .setLabel('Month 2 (e.g. May 2026)')
+        .setStyle(TextInputStyle.Short)
+        .setValue(data.month2Header)
+        .setMaxLength(50)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('month2_events')
+        .setLabel('Month 2 Events (DD/MM/YYYY - MapName)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(data.month2Events)
+        .setMaxLength(1000)
         .setRequired(true)
     )
   );
