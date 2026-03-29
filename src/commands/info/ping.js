@@ -9,7 +9,7 @@ module.exports = {
     const sent = await interaction.reply({
       content: '🏓 Pinging...',
       fetchReply: true,
-      ephemeral: true
+      flags: 64
     });
 
     const latency = sent.createdTimestamp - interaction.createdTimestamp;

@@ -1,5 +1,8 @@
 /**
  * nodesHandler.js — Handles NODES embed post and edit interactions.
+ *
+ * Fix: handleAdminEditNodes now loads cached data from /tmp/ to avoid
+ * the 3-second Discord modal timeout (same pattern as rotationHandler).
  */
 
 const {
@@ -13,6 +16,7 @@ const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { THUMBNAIL_URL, DEFAULT_NODES } = require('../../config/constants');
 const { sendLog, findLastBotMessage } = require('./shared');
+const { saveNodesData, loadNodesData } = require('../../utils/nodesStore');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +33,58 @@ function buildNodesEmbed(fields) {
     .addFields(fields);
 }
 
+/**
+ * Shows the Edit Nodes modal pre-populated with the given field values.
+ */
+function showNodesModal(interaction, fields) {
+  const getValue = (index) => fields[index]?.value ?? '';
+
+  const modal = new ModalBuilder()
+    .setCustomId('nodes_edit')
+    .setTitle('Edit Nodes');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_nw')
+        .setLabel('North / West HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(0))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_mid')
+        .setLabel('Mid HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(1))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_se')
+        .setLabel('South / East HQ')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(2))
+        .setMaxLength(500)
+        .setRequired(true)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('nodes_arty')
+        .setLabel('Arty')
+        .setStyle(TextInputStyle.Paragraph)
+        .setValue(getValue(3))
+        .setMaxLength(500)
+        .setRequired(true)
+    )
+  );
+
+  return interaction.showModal(modal);
+}
+
 // ── Nodes Modal Submit ────────────────────────────────────────────────────────
 
 async function handleNodesModalSubmit(interaction) {
@@ -40,6 +96,9 @@ async function handleNodesModalSubmit(interaction) {
     { name: 'South / East HQ', value: interaction.fields.getTextInputValue('nodes_se')   || '—' },
     { name: 'Arty',            value: interaction.fields.getTextInputValue('nodes_arty') || '—' }
   ];
+
+  // Persist for round-trip editing (avoids async channel scan on next edit)
+  saveNodesData(fields);
 
   const updatedEmbed = buildNodesEmbed(fields);
   const channelIds   = getNodesChannelIds();
@@ -104,6 +163,9 @@ async function handleAdminPostNodes(interaction) {
   let failed           = 0;
   const postedChannels = [];
 
+  // Persist defaults so the edit modal can load them instantly
+  saveNodesData(DEFAULT_NODES);
+
   for (const channelId of channelIds) {
     try {
       const ch = await interaction.client.channels.fetch(channelId);
@@ -139,6 +201,14 @@ async function handleAdminPostNodes(interaction) {
 
 // ── Admin: Edit Nodes (panel button) ─────────────────────────────────────────
 
+/**
+ * Opens the Edit Nodes modal.
+ *
+ * IMPORTANT: Discord requires showModal() within 3 seconds of the interaction.
+ * We first try to load cached data from /tmp/ (instant). If /tmp/ is empty
+ * (e.g. after container restart), we defer, scan the channel, cache the data,
+ * and ask the user to click again — same pattern as rotationHandler.
+ */
 async function handleAdminEditNodes(interaction) {
   const channelIds = getNodesChannelIds();
 
@@ -149,65 +219,39 @@ async function handleAdminEditNodes(interaction) {
     });
   }
 
-  // Find current content from the first available channel
-  let currentFields = DEFAULT_NODES;
+  // Try instant load from /tmp/ — no async calls needed
+  const cachedFields = loadNodesData();
+  if (cachedFields) {
+    return showNodesModal(interaction, cachedFields);
+  }
+
+  // Fallback: scan channels for current data (async — risks 3-second timeout).
+  // Defer first to avoid "This interaction failed" error.
+  await interaction.deferReply({ flags: 64 });
+
+  let recoveredFields = null;
   for (const channelId of channelIds) {
     try {
       const ch  = await interaction.client.channels.fetch(channelId);
       const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === 'NODES'));
       if (msg?.embeds[0]?.fields?.length) {
-        currentFields = msg.embeds[0].fields;
+        recoveredFields = msg.embeds[0].fields.map(f => ({ name: f.name, value: f.value }));
+        saveNodesData(recoveredFields);
         break;
       }
     } catch (_) {}
   }
 
-  const getValue = (index) => currentFields[index]?.value ?? '';
+  if (!recoveredFields) {
+    return interaction.editReply({
+      content: '❌ No NODES message found. Post one first using **Post Nodes**.'
+    });
+  }
 
-  const modal = new ModalBuilder()
-    .setCustomId('nodes_edit')
-    .setTitle('Edit Nodes');
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('nodes_nw')
-        .setLabel('North / West HQ')
-        .setStyle(TextInputStyle.Paragraph)
-        .setValue(getValue(0))
-        .setMaxLength(500)
-        .setRequired(true)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('nodes_mid')
-        .setLabel('Mid HQ')
-        .setStyle(TextInputStyle.Paragraph)
-        .setValue(getValue(1))
-        .setMaxLength(500)
-        .setRequired(true)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('nodes_se')
-        .setLabel('South / East HQ')
-        .setStyle(TextInputStyle.Paragraph)
-        .setValue(getValue(2))
-        .setMaxLength(500)
-        .setRequired(true)
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('nodes_arty')
-        .setLabel('Arty')
-        .setStyle(TextInputStyle.Paragraph)
-        .setValue(getValue(3))
-        .setMaxLength(500)
-        .setRequired(true)
-    )
-  );
-
-  await interaction.showModal(modal);
+  // Cannot show modal after deferReply — ask user to click again
+  return interaction.editReply({
+    embeds: [createSuccessEmbed('Ready', 'Data recovered! Please click **Edit Nodes** again to open the editor.')]
+  });
 }
 
 module.exports = { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes };

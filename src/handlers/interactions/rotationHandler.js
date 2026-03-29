@@ -227,6 +227,17 @@ async function handleAdminEditRotation(interaction) {
       if (found) {
         storedMsgId = found.id;
         saveRotationMsgId(channelId, found.id);
+        // Recover field data from the embed so the edit modal shows current values
+        // instead of empty defaults after a container restart.
+        const fields = found.embeds[0]?.fields ?? [];
+        if (fields.length >= 2) {
+          saveRotationRaw(found.id, {
+            month1Header: fields[0].name,
+            month1Events: fields[0].value,
+            month2Header: fields[1].name,
+            month2Events: fields[1].value
+          });
+        }
       }
     }
     if (!storedMsgId) {
