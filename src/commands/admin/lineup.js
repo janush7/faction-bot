@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const logger = require('../../utils/logger');
+const { saveLineupData } = require('../../utils/lineupStore');
 
 const TIMES = {
   matchPositions: { h: 19, m: 30 },
@@ -100,6 +101,9 @@ module.exports = {
       embeds: [lineupEmbed],
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
+
+    // Save to cache — so admin "Edit Caption" works instantly without channel scan
+    saveLineupData(channel.id, posted.id, defaultCaption);
 
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)

@@ -1,16 +1,15 @@
 /**
  * rotationStore.js
  *
- * Persists rotation data in /tmp/ (always writable in Docker).
- * Data is lost on container restart, but the bot will scan the channel
- * to recover the message ID if needed.
+ * Persists rotation data in /app/data/ (Docker named volume — survives restarts).
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-const RAW_PATH = '/tmp/rotation_raw.json';
-const MSG_PATH = '/tmp/rotation_msg.json';
+const DATA_DIR = '/app/data';
+const RAW_PATH = path.join(DATA_DIR, 'rotation_raw.json');
+const MSG_PATH = path.join(DATA_DIR, 'rotation_msg.json');
 
 function _read(filePath) {
   try {
@@ -21,7 +20,9 @@ function _read(filePath) {
 }
 
 function _write(filePath, data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (_) {}
 }
 
 // ── Raw event text (for edit round-trip) ─────────────────────────────────────
