@@ -20,7 +20,7 @@ function loadCommands(dir) {
 
 loadCommands(path.join(__dirname, 'src', 'commands'));
 
-const rest = new REST().setToken(process.env.TOKEN);
+const rest = new REST().setToken(process.env.BOT_TOKEN);
 
 (async () => {
   try {
