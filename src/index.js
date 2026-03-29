@@ -45,4 +45,4 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.BOT_TOKEN);

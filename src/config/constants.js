@@ -1,9 +1,9 @@
 module.exports = {
   REQUIRED_ENV_VARS: [
-    'TOKEN',
+    'BOT_TOKEN',
     'CLIENT_ID',
     'GUILD_ID',
-    'CHANNEL_ID',
+    'FACTION_CHANNEL',
     'ALLIES_ROLE',
     'AXIS_ROLE',
   ]
