@@ -95,8 +95,8 @@ module.exports = {
       return interaction.editReply({ content: '❌ Lineup channel not found. Check `LINEUP_CHANNEL` in `.env`.' });
     }
 
-    const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
-    const defaultCaption = `Midweek Frontline – **${server}** – Lineup – **${dateLabel}**`;
+    const { matchUnix, slUnix, startUnix } = getNextWednesdayTimestamps();
+    const defaultCaption = `Midweek Frontline – **${server}** – Lineup – <t:${matchUnix}:D>`;
 
     const lineupEmbed = new EmbedBuilder()
       .setDescription(defaultCaption)
