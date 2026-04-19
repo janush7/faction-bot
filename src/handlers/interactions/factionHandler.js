@@ -123,10 +123,6 @@ async function handleFactionSelection(interaction, factionKey) {
     await acquireSlot();
     slotAcquired = true;
 
-    // Remove any other faction role(s) the user currently holds — one faction
-    // at a time across all servers. Must succeed before adding the new role;
-    // otherwise a partial failure would leave the user with multiple faction
-    // roles (e.g. Allies S1 + Axis S1), which violates the one-faction invariant.
     const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
     const rolesToRemove = otherFactionRoleIds.filter(id => member.roles.cache.has(id));
     let switched = false;

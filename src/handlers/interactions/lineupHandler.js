@@ -358,9 +358,6 @@ async function handleAdminPostServer(interaction, serverOverride) {
       { name: '\ud83d\udd12 Password',    value: serverPassword, inline: true }
     );
 
-  // Delete the previously-tracked embed for this server slot (if any) so
-  // repeated Post clicks don't accumulate duplicate embeds in the channel.
-  // Errors are swallowed — the new post below supersedes the old state.
   const previousData = loadServerData(channel.id, server);
   if (previousData?.messageId) {
     const prevMsg = await channel.messages.fetch(previousData.messageId).catch(() => null);
