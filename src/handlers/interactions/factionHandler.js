@@ -113,11 +113,16 @@ async function handleFactionSelection(interaction, factionKey) {
 
   // Defer before acquiring a slot: when many users click at once, queued
   // swaps can wait longer than Discord's 3s interaction budget, which would
-  // otherwise fail the reply.
-  await interaction.deferReply({ flags: 64 });
-  await acquireSlot();
-
+  // otherwise fail the reply. Both awaits live inside the try/finally so
+  // swapInProgress is always cleaned up even if deferReply fails (e.g.
+  // expired interaction token, network error) — otherwise the user would
+  // be locked out until the bot restarts.
+  let slotAcquired = false;
   try {
+    await interaction.deferReply({ flags: 64 });
+    await acquireSlot();
+    slotAcquired = true;
+
     // Remove any other faction role(s) the user currently holds — one faction
     // at a time across all servers.
     const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
@@ -153,7 +158,7 @@ async function handleFactionSelection(interaction, factionKey) {
     });
   } finally {
     swapInProgress.delete(userId);
-    releaseSlot();
+    if (slotAcquired) releaseSlot();
   }
 }
 
