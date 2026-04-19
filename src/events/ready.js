@@ -1,9 +1,11 @@
-const { Events } = require('discord.js');
+const { Events, EmbedBuilder } = require('discord.js');
 const path = require('path');
 const logger = require('../utils/logger');
 const emojiState = require('../utils/emojiState');
 const { startScheduler, startRotationScheduler } = require('../utils/scheduler');
 const { warmRotationCache } = require('../handlers/interactions/rotationHandler');
+const { sendLog } = require('../handlers/interactions/shared');
+const pkg = require('../../package.json');
 
 module.exports = {
   name: Events.ClientReady,
@@ -23,6 +25,15 @@ module.exports = {
     warmRotationCache(client).catch(err =>
       logger.warn(`warmRotationCache failed: ${err.message}`)
     );
+
+    // Post a one-line startup notice to the admin log so admins can see
+    // when the bot came online and which version is running.
+    const startupEmbed = new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('🚀 Bot Online')
+      .setDescription(`Version \`${pkg.version}\` · Node ${process.version}`)
+      .setTimestamp();
+    sendLog(client, startupEmbed).catch(() => {});
   }
 };
 

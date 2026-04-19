@@ -58,10 +58,16 @@ function permName(flag) {
 }
 
 function baseChannelPerms(needsManage) {
+  // ReadMessageHistory is required for channel.messages.fetch(messageId),
+  // which every Edit/Apply flow uses to locate the existing embed before
+  // updating it. AttachFiles is required for Lineup caption edits that
+  // repost the lineup image via attachment://.
   const perms = [
     PermissionFlagsBits.ViewChannel,
     PermissionFlagsBits.SendMessages,
     PermissionFlagsBits.EmbedLinks,
+    PermissionFlagsBits.ReadMessageHistory,
+    PermissionFlagsBits.AttachFiles,
   ];
   if (needsManage) perms.push(PermissionFlagsBits.ManageMessages);
   return perms;

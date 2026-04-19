@@ -76,11 +76,37 @@ async function trackAction(interaction, label, fn) {
   saveLastAction(`${label}${suffix}`, interaction.user.id, interaction.user.tag);
 }
 
+// ── Guild allowlist ───────────────────────────────────────────────────────────
+// Optional hard gate: if ALLOWED_GUILDS is set, only interactions from those
+// guild IDs are processed. Protects the bot from responding on servers it
+// was invited to by mistake.
+function guildAllowed(guildId) {
+  const raw = process.env.ALLOWED_GUILDS;
+  if (!raw || !String(raw).trim()) return true;
+  const allowed = String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  return allowed.includes(String(guildId ?? ''));
+}
+
+async function rejectUnlistedGuild(interaction) {
+  const reply = { content: '⛔ This bot is not available on this server.', flags: 64 };
+  try {
+    if (interaction.isRepliable && interaction.isRepliable()) {
+      await interaction.reply(reply);
+    }
+  } catch (_) { /* best-effort */ }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction) {
+
+    // Enforce the optional ALLOWED_GUILDS gate before any handler runs.
+    if (interaction.guildId && !guildAllowed(interaction.guildId)) {
+      logger.warn(`Rejected interaction from unlisted guild ${interaction.guildId}`);
+      return rejectUnlistedGuild(interaction);
+    }
 
     // ── Slash Commands ──────────────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
