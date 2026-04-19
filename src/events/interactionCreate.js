@@ -87,8 +87,10 @@ module.exports = {
       if (customId.startsWith('lineup_editserver:')) return await handleLineupEditServerButton(interaction);
 
       // ── Faction buttons ───────────────────────────────────────────────────
-      if (customId === 'faction_allies') return await handleFactionSelection(interaction, 'allies');
-      if (customId === 'faction_axis')   return await handleFactionSelection(interaction, 'axis');
+      if (customId.startsWith('faction_')) {
+        const factionKey = customId.slice('faction_'.length);
+        return await handleFactionSelection(interaction, factionKey);
+      }
 
       // ── Admin buttons ─────────────────────────────────────────────────────
       if (customId.startsWith('admin_')) {

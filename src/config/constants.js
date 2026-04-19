@@ -6,6 +6,8 @@ module.exports = {
     'FACTION_CHANNEL',
     'ALLIES_ROLE',
     'AXIS_ROLE',
+    'ALLIES_S2_ROLE',
+    'AXIS_S2_ROLE',
   ],
 
   // Shared thumbnail used across all embeds

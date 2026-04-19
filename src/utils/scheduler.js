@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const logger = require('./logger');
+const { getAllFactionRoleIds } = require('../config/factions');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -38,11 +39,13 @@ async function resetFactionRoles(client) {
     return;
   }
 
-  const alliesRole = guild.roles.cache.get(process.env.ALLIES_ROLE);
-  const axisRole   = guild.roles.cache.get(process.env.AXIS_ROLE);
+  const factionRoleIds = getAllFactionRoleIds();
+  const factionRoles = factionRoleIds
+    .map(id => guild.roles.cache.get(id))
+    .filter(Boolean);
 
-  if (!alliesRole || !axisRole) {
-    logger.error('Scheduler: faction roles not found. Check ALLIES_ROLE and AXIS_ROLE in .env');
+  if (!factionRoles.length) {
+    logger.error('Scheduler: no faction roles found. Check ALLIES_ROLE / AXIS_ROLE / ALLIES_S2_ROLE / AXIS_S2_ROLE in .env');
     return;
   }
 
@@ -58,10 +61,9 @@ async function resetFactionRoles(client) {
   }
 
   // Only iterate members that actually have a faction role — skip everyone else
-  const membersToReset = new Map([
-    ...alliesRole.members,
-    ...axisRole.members
-  ]);
+  const membersToReset = new Map(
+    factionRoles.flatMap(role => [...role.members])
+  );
 
   if (!membersToReset.size) {
     logger.info('Scheduler: no members with faction roles — nothing to reset.');
@@ -69,9 +71,7 @@ async function resetFactionRoles(client) {
 
   for (const [, member] of membersToReset) {
     try {
-      const rolesToRemove = [];
-      if (member.roles.cache.has(alliesRole.id)) rolesToRemove.push(alliesRole);
-      if (member.roles.cache.has(axisRole.id))   rolesToRemove.push(axisRole);
+      const rolesToRemove = factionRoles.filter(r => member.roles.cache.has(r.id));
       if (!rolesToRemove.length) continue;
       await member.roles.remove(rolesToRemove, 'Weekly faction reset');
       removed++;
