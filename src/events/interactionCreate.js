@@ -44,19 +44,20 @@ const {
 const { buildPanelPayload, refreshPanelMessage } = require('../commands/admin/panel');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-// Runs the underlying handler, records the admin action in the lastAction
-// store, and (optionally) edits the panel message in place so 🔴/🟢 status
-// and dropdown placeholders update without a manual refresh click.
+// Runs the underlying handler and records the admin action in the lastAction
+// store. The panel does NOT auto-refresh after actions — admins use the
+// Refresh control in the Panel dropdown (or re-run /panel) to redraw status.
+// This was removed because Discord kept the last-selected dropdown option
+// visible even after the message was edited, which looked like the panel
+// was "remembering" the selection.
 
-async function trackAction(interaction, label, fn, { refresh = true } = {}) {
+async function trackAction(interaction, label, fn) {
   const result = await fn();
   // Handlers may return `false` to signal "nothing was performed" (e.g.
-  // cooldown-blocked, preview expired). In that case we skip both the
-  // audit-log entry and the panel refresh so the footer doesn't show a
-  // phantom "last action" for work that never happened.
+  // cooldown-blocked, preview expired). Skip the audit-log entry so the
+  // footer doesn't show a phantom "last action" for work that never happened.
   if (result === false) return;
   saveLastAction(label, interaction.user.id, interaction.user.tag);
-  if (refresh) await refreshPanelMessage(interaction);
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ module.exports = {
           return await trackAction(
             interaction,
             server ? `Edit Lineup — ${server}` : 'Edit Lineup',
-            () => handleLineupCaptionSubmit(interaction)
+            () => handleLineupCaptionSubmit(interaction),
           );
         }
         if (interaction.customId.startsWith('lineup_server:')) {
@@ -101,14 +102,14 @@ module.exports = {
           return await trackAction(
             interaction,
             server ? `Edit Server Details — ${server}` : 'Edit Server Details',
-            () => handleServerModalSubmit(interaction)
+            () => handleServerModalSubmit(interaction),
           );
         }
         if (interaction.customId === 'nodes_edit') {
           return await trackAction(
             interaction,
             'Edit Nodes',
-            () => handleNodesModalSubmit(interaction)
+            () => handleNodesModalSubmit(interaction),
           );
         }
         if (interaction.customId.startsWith('rotation_edit:')) {
@@ -140,94 +141,80 @@ module.exports = {
           }
           const value = interaction.values[0] || '';
 
-          // Wrap every admin-select dispatch in a try/finally that rebuilds
-          // the panel so the dropdown returns to its placeholder instead of
-          // showing the last selected option ("✏️ Edit Nodes", etc.). The
-          // refresh is fire-and-forget and never blocks the handler's
-          // own response.
-          try {
-            if (interaction.customId === 'admin_faction_select') {
-              if (value === 'reload') {
-                return await trackAction(
-                  interaction,
-                  'Reload Faction Embed',
-                  () => handleAdminReload(interaction),
-                  { refresh: false }
-                );
-              }
-              // Reset only opens the confirm dialog — recorded when user confirms.
-              if (value === 'reset') return await handleAdminResetConfirm(interaction);
+          if (interaction.customId === 'admin_faction_select') {
+            if (value === 'reload') {
+              return await trackAction(
+                interaction,
+                'Reload Faction Embed',
+                () => handleAdminReload(interaction),
+              );
             }
+            // Reset only opens the confirm dialog — recorded when user confirms.
+            if (value === 'reset') return await handleAdminResetConfirm(interaction);
+          }
 
-            if (interaction.customId === 'admin_lineup_select') {
-              const [action, server] = value.split(':');
-              // Edit only opens a modal — recorded on modal submit.
-              if (action === 'edit') return await handleAdminEditCaption(interaction, server);
-            }
+          if (interaction.customId === 'admin_lineup_select') {
+            const [action, server] = value.split(':');
+            // Edit only opens a modal — recorded on modal submit.
+            if (action === 'edit') return await handleAdminEditCaption(interaction, server);
+          }
 
-            if (interaction.customId === 'admin_server_select') {
-              const [action, server] = value.split(':');
-              if (action === 'post') {
-                return await trackAction(
-                  interaction,
-                  server ? `Post Server Details — ${server}` : 'Post Server Details',
-                  () => handleAdminPostServer(interaction, server),
-                  { refresh: false }
-                );
-              }
-              if (action === 'edit') return await handleAdminEditServer(interaction, server);
+          if (interaction.customId === 'admin_server_select') {
+            const [action, server] = value.split(':');
+            if (action === 'post') {
+              return await trackAction(
+                interaction,
+                server ? `Post Server Details — ${server}` : 'Post Server Details',
+                () => handleAdminPostServer(interaction, server),
+              );
             }
+            if (action === 'edit') return await handleAdminEditServer(interaction, server);
+          }
 
-            if (interaction.customId === 'admin_rotnodes_select') {
-              if (value === 'rotation:post') {
-                return await trackAction(
-                  interaction,
-                  'Post Map Rotation',
-                  () => handleAdminPostRotation(interaction),
-                  { refresh: false }
-                );
-              }
-              if (value === 'rotation:edit') return await handleAdminEditRotation(interaction);
-              if (value === 'rotation:advance') {
-                return await trackAction(
-                  interaction,
-                  'Advance Rotation',
-                  () => handleAdminAdvanceRotation(interaction),
-                  { refresh: false }
-                );
-              }
-              if (value === 'nodes:post') {
-                return await trackAction(
-                  interaction,
-                  'Post Nodes',
-                  () => handleAdminPostNodes(interaction),
-                  { refresh: false }
-                );
-              }
-              if (value === 'nodes:edit')    return await handleAdminEditNodes(interaction);
+          if (interaction.customId === 'admin_rotnodes_select') {
+            if (value === 'rotation:post') {
+              return await trackAction(
+                interaction,
+                'Post Map Rotation',
+                () => handleAdminPostRotation(interaction),
+              );
             }
+            if (value === 'rotation:edit') return await handleAdminEditRotation(interaction);
+            if (value === 'rotation:advance') {
+              return await trackAction(
+                interaction,
+                'Advance Rotation',
+                () => handleAdminAdvanceRotation(interaction),
+              );
+            }
+            if (value === 'nodes:post') {
+              return await trackAction(
+                interaction,
+                'Post Nodes',
+                () => handleAdminPostNodes(interaction),
+              );
+            }
+            if (value === 'nodes:edit')    return await handleAdminEditNodes(interaction);
+          }
 
-            if (interaction.customId === 'admin_panel_select') {
-              if (value === 'refresh') {
-                // Just ack the interaction; the finally below redraws the panel.
-                return await interaction.deferUpdate();
-              }
-              if (value === 'postall') {
-                return await trackAction(
-                  interaction,
-                  'Post All Missing',
-                  () => handleAdminPostAllMissing(interaction),
-                  { refresh: false }
-                );
-              }
-              if (value === 'healthcheck') {
-                return await handleAdminHealthcheck(interaction);
-              }
-              // Clear logs only opens confirm — recorded when user confirms.
-              if (value === 'clearlogs') return await handleAdminClearLogsConfirm(interaction);
+          if (interaction.customId === 'admin_panel_select') {
+            if (value === 'refresh') {
+              // The only path that redraws the panel. Ack + rebuild + edit.
+              await interaction.deferUpdate();
+              return await refreshPanelMessage(interaction);
             }
-          } finally {
-            refreshPanelMessage(interaction).catch(() => {});
+            if (value === 'postall') {
+              return await trackAction(
+                interaction,
+                'Post All Missing',
+                () => handleAdminPostAllMissing(interaction),
+              );
+            }
+            if (value === 'healthcheck') {
+              return await handleAdminHealthcheck(interaction);
+            }
+            // Clear logs only opens confirm — recorded when user confirms.
+            if (value === 'clearlogs') return await handleAdminClearLogsConfirm(interaction);
           }
         }
       } catch (error) {
@@ -268,13 +255,10 @@ module.exports = {
 
         if (customId === 'admin_reset')              return await handleAdminResetConfirm(interaction);
         if (customId === 'admin_reset_confirm') {
-          // Confirmed from an ephemeral dialog; interaction.message is the
-          // dialog, not the panel, so we skip the auto-refresh here.
           return await trackAction(
             interaction,
             'Reset Roles',
             () => handleAdminReset(interaction),
-            { refresh: false }
           );
         }
         if (customId === 'admin_reset_cancel')       return await handleAdminResetCancel(interaction);
@@ -282,7 +266,7 @@ module.exports = {
           return await trackAction(
             interaction,
             'Reload Faction Embed',
-            () => handleAdminReload(interaction)
+            () => handleAdminReload(interaction),
           );
         }
         if (customId === 'admin_clearlogs')          return await handleAdminClearLogsConfirm(interaction);
@@ -291,7 +275,6 @@ module.exports = {
             interaction,
             'Clear Log Channel',
             () => handleAdminClearLogs(interaction),
-            { refresh: false }
           );
         }
         if (customId === 'admin_clearlogs_cancel')   return await handleAdminClearLogsCancel(interaction);
@@ -304,7 +287,7 @@ module.exports = {
           return await trackAction(
             interaction,
             'Post Server Details',
-            () => handleAdminPostServer(interaction)
+            () => handleAdminPostServer(interaction),
           );
         }
         if (customId.startsWith('admin_edit_caption')) return await handleAdminEditCaption(interaction);
@@ -313,7 +296,7 @@ module.exports = {
           return await trackAction(
             interaction,
             'Post Nodes',
-            () => handleAdminPostNodes(interaction)
+            () => handleAdminPostNodes(interaction),
           );
         }
         if (customId === 'admin_edit_nodes')      return await handleAdminEditNodes(interaction);
@@ -321,7 +304,7 @@ module.exports = {
           return await trackAction(
             interaction,
             'Post Map Rotation',
-            () => handleAdminPostRotation(interaction)
+            () => handleAdminPostRotation(interaction),
           );
         }
         if (customId === 'admin_edit_rotation')   return await handleAdminEditRotation(interaction);
@@ -333,7 +316,6 @@ module.exports = {
           interaction,
           'Edit Map Rotation',
           () => handleRotationApplyButton(interaction),
-          { refresh: false }
         );
       }
       if (customId.startsWith('rotation_cancel:')) {
