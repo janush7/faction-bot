@@ -68,18 +68,10 @@ async function handleLineupCaptionSubmit(interaction) {
   const newCaption = interaction.fields.getTextInputValue('caption_text');
 
   try {
-    const ch  = await interaction.client.channels.fetch(channelId);
-    const msg = await ch.messages.fetch(messageId);
-    const old = msg.embeds[0];
-
-    // Re-upload the image on edit and reference it with `attachment://` in
-    // the embed. Previous approaches (keeping the old attachment + setting
-    // the embed URL to its CDN URL) caused Discord to stop linking the
-    // image to the embed — the image then rendered above the embed as a
-    // standalone attachment preview. Re-attaching forces Discord to treat
-    // the image as part of the embed again. Slightly more expensive
-    // (one image download + upload per caption edit) but visually correct.
-    const existingAttachment = msg.attachments.first();
+    const ch     = await interaction.client.channels.fetch(channelId);
+    const oldMsg = await ch.messages.fetch(messageId);
+    const old    = oldMsg.embeds[0];
+    const existingAttachment = oldMsg.attachments.first();
 
     const updated = new EmbedBuilder()
       .setColor(old.color)
@@ -88,21 +80,31 @@ async function handleLineupCaptionSubmit(interaction) {
     if (old.fields?.length) updated.addFields(...old.fields);
     if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
 
-    const editPayload = { embeds: [updated] };
-
+    // Edit-in-place reliably breaks the embed→attachment link on Discord's
+    // side: the image either vanishes or renders as a standalone preview
+    // above the embed. Instead, delete the old message and send a fresh one
+    // with the same image and the new caption. Identical layout to the
+    // original `/lineup` post, which we know renders correctly.
     if (existingAttachment) {
       const attachmentName = existingAttachment.name || 'lineup.png';
       updated.setImage(`attachment://${attachmentName}`);
-      editPayload.files       = [{ attachment: existingAttachment.url, name: attachmentName }];
-      editPayload.attachments = []; // drop the old attachment; the re-uploaded file replaces it
-    } else if (old.image?.url) {
-      updated.setImage(old.image.url);
+
+      const newMsg = await ch.send({
+        embeds: [updated],
+        files: [{ attachment: existingAttachment.url, name: attachmentName }]
+      });
+
+      await oldMsg.delete().catch(e =>
+        logger.warn(`Could not delete old lineup message ${messageId}: ${e.message}`)
+      );
+
+      saveLineupData(channelId, newMsg.id, newCaption);
+    } else {
+      // No image on the original — just edit in place.
+      if (old.image?.url) updated.setImage(old.image.url);
+      await oldMsg.edit({ embeds: [updated] });
+      saveLineupData(channelId, messageId, newCaption);
     }
-
-    await msg.edit(editPayload);
-
-    // Update cache
-    saveLineupData(channelId, messageId, newCaption);
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
     await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, flags: 64 });
