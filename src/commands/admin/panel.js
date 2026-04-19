@@ -32,7 +32,7 @@ function jumpUrl(guildId, channelId, messageId) {
 
 function jumpSuffix(guildId, channelId, messageId) {
   const url = jumpUrl(guildId, channelId, messageId);
-  return url ? `  [↗️](${url})` : '';
+  return url ? `  [↗](${url})` : '';
 }
 
 // ── Status probes ────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ async function buildPanelPayload(client, guildId) {
     rotationRow(rot, guildId),
     nodesRow(nodes, guildId),
     '',
-    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted  •  ↗️ jump to message_`
+    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted  •  ↗ jump to message_`
   ].join('\n');
 
   const embed = new EmbedBuilder()
