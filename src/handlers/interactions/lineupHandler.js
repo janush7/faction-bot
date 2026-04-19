@@ -72,27 +72,34 @@ async function handleLineupCaptionSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
     const old = msg.embeds[0];
 
-    // Use the existing attachment's fresh URL for the embed image and pass
-    // the attachment through the edit so Discord links them and doesn't
-    // render the image twice (once in the embed, once as a standalone
-    // preview below it). `attachment://` only resolves to files in `files`,
-    // so we can't use it here for attachments that are already on the
-    // message.
+    // Re-upload the image on edit and reference it with `attachment://` in
+    // the embed. Previous approaches (keeping the old attachment + setting
+    // the embed URL to its CDN URL) caused Discord to stop linking the
+    // image to the embed — the image then rendered above the embed as a
+    // standalone attachment preview. Re-attaching forces Discord to treat
+    // the image as part of the embed again. Slightly more expensive
+    // (one image download + upload per caption edit) but visually correct.
     const existingAttachment = msg.attachments.first();
-    const imageUrl           = existingAttachment?.url ?? old.image?.url ?? null;
 
     const updated = new EmbedBuilder()
       .setColor(old.color)
       .setFooter({ text: newCaption });
 
     if (old.fields?.length) updated.addFields(...old.fields);
-    if (imageUrl)           updated.setImage(imageUrl);
     if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
 
-    await msg.edit({
-      embeds:      [updated],
-      attachments: [...msg.attachments.values()]
-    });
+    const editPayload = { embeds: [updated] };
+
+    if (existingAttachment) {
+      const attachmentName = existingAttachment.name || 'lineup.png';
+      updated.setImage(`attachment://${attachmentName}`);
+      editPayload.files       = [{ attachment: existingAttachment.url, name: attachmentName }];
+      editPayload.attachments = []; // drop the old attachment; the re-uploaded file replaces it
+    } else if (old.image?.url) {
+      updated.setImage(old.image.url);
+    }
+
+    await msg.edit(editPayload);
 
     // Update cache
     saveLineupData(channelId, messageId, newCaption);
