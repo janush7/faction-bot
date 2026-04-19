@@ -72,18 +72,26 @@ async function handleLineupCaptionSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
     const old = msg.embeds[0];
 
-    // Use the existing CDN image URL — re-attaching the file is not possible during an edit.
-    const imageUrl = old.image?.url ?? null;
+    // Keep the existing attachment claimed by the embed via `attachment://`
+    // instead of pointing the embed at the CDN URL. Otherwise Discord renders
+    // the image twice — once inside the embed and once as an unclaimed
+    // attachment preview below it.
+    const existingAttachment = msg.attachments.first();
 
     const updated = new EmbedBuilder()
       .setColor(old.color)
       .setFooter({ text: newCaption });
 
-    if (old.fields?.length) updated.addFields(...old.fields);
-    if (imageUrl)           updated.setImage(imageUrl);
-    if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
+    if (old.fields?.length)       updated.addFields(...old.fields);
+    if (existingAttachment)       updated.setImage(`attachment://${existingAttachment.name}`);
+    else if (old.image?.url)      updated.setImage(old.image.url);
+    if (old.thumbnail?.url)       updated.setThumbnail(old.thumbnail.url);
 
-    await msg.edit({ embeds: [updated] });
+    await msg.edit({
+      embeds: [updated],
+      // Preserve the existing attachment so `attachment://` resolves.
+      attachments: existingAttachment ? [{ id: existingAttachment.id }] : []
+    });
 
     // Update cache
     saveLineupData(channelId, messageId, newCaption);
