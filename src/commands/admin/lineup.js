@@ -96,7 +96,8 @@ module.exports = {
     }
 
     const { matchUnix, slUnix, startUnix } = getNextWednesdayTimestamps();
-    const defaultCaption = `Midweek Frontline – **${server}** – Lineup – <t:${startUnix}:D>`;
+    const serverLabel = server === 'S1' ? 'Server 1' : 'Server 2';
+    const defaultCaption = `**${serverLabel}** - <t:${startUnix}:D>`;
 
     const lineupEmbed = new EmbedBuilder()
       .setDescription(defaultCaption)
