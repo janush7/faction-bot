@@ -33,4 +33,4 @@ function markAdminAction(userId, action) {
   store.set(_key(userId, action), Date.now());
 }
 
-module.exports = { remainingCooldown, markAdminAction, cooldownSeconds };
+module.exports = { remainingCooldown, markAdminAction };
