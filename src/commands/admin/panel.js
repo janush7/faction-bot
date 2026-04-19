@@ -9,6 +9,7 @@ const {
 
 const { loadLineupData, loadServerData } = require('../../utils/lineupStore');
 const { loadRotationMsgId }              = require('../../utils/rotationStore');
+const { loadLastAction }                 = require('../../utils/lastActionStore');
 const pkg = require('../../../package.json');
 
 const OK = '🟢';
@@ -24,106 +25,119 @@ function humanizeAgo(ms) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-// ── Status probes ────────────────────────────────────────────────────────────
-// Each probe verifies the current state against Discord instead of trusting
-// local cache (cache may point at a message that was manually deleted).
-// Probes catch their own errors and degrade to "not posted" so the panel
-// never throws.
+function jumpUrl(guildId, channelId, messageId) {
+  if (!guildId || !channelId || !messageId) return null;
+  return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
+}
 
-async function messageExists(client, channelId, messageId) {
-  if (!channelId || !messageId) return false;
+function jumpSuffix(guildId, channelId, messageId) {
+  const url = jumpUrl(guildId, channelId, messageId);
+  return url ? `  [↗](${url})` : '';
+}
+
+// ── Status probes ────────────────────────────────────────────────────────────
+// Each probe verifies state against Discord and returns either null (not
+// posted) or a small locator object. Probes catch their own errors and
+// degrade to null so the panel never throws.
+
+async function messageLocator(client, channelId, messageId) {
+  if (!channelId || !messageId) return null;
   try {
     const channel = await client.channels.fetch(channelId);
-    if (!channel) return false;
+    if (!channel) return null;
     const msg = await channel.messages.fetch(messageId);
-    return !!msg;
+    return msg ? { channelId, messageId: msg.id } : null;
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
 async function probeFaction(client) {
   const ch = process.env.FACTION_CHANNEL;
-  if (!ch) return false;
+  if (!ch) return null;
   try {
     const channel = await client.channels.fetch(ch);
-    if (!channel) return false;
+    if (!channel) return null;
     const msgs = await channel.messages.fetch({ limit: 50 });
-    return msgs.some(m =>
+    const match = msgs.find(m =>
       m.author.id === client.user.id &&
       m.embeds.some(e => e.title === 'Choose your side!')
     );
+    return match ? { channelId: ch, messageId: match.id } : null;
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
 async function probeLineup(client, server) {
   const ch = process.env.LINEUP_CHANNEL;
-  if (!ch) return false;
+  if (!ch) return null;
   const data = loadLineupData(ch, server);
-  return messageExists(client, ch, data?.messageId);
+  return messageLocator(client, ch, data?.messageId);
 }
 
 async function probeServer(client, server) {
   const ch = process.env.SERVER_DETAILS_CHANNEL;
-  if (!ch) return false;
+  if (!ch) return null;
   const data = loadServerData(ch, server);
-  return messageExists(client, ch, data?.messageId);
+  return messageLocator(client, ch, data?.messageId);
 }
 
 async function probeRotation(client) {
   const ch = process.env.MAP_ROTATION_CHANNEL;
-  if (!ch) return false;
-  return messageExists(client, ch, loadRotationMsgId(ch));
+  if (!ch) return null;
+  return messageLocator(client, ch, loadRotationMsgId(ch));
 }
 
 async function probeNodes(client) {
   const channels = (process.env.NODES_CHANNELS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
-  if (!channels.length) return { posted: 0, total: 0 };
+  if (!channels.length) return { total: 0, hits: [] };
 
-  const results = await Promise.all(channels.map(async cid => {
+  const hits = await Promise.all(channels.map(async cid => {
     try {
       const ch = await client.channels.fetch(cid);
-      if (!ch) return false;
+      if (!ch) return null;
       const msgs = await ch.messages.fetch({ limit: 50 });
-      return msgs.some(m =>
+      const match = msgs.find(m =>
         m.author.id === client.user.id &&
         m.embeds.some(e => e.title === 'NODES')
       );
+      return match ? { channelId: cid, messageId: match.id } : null;
     } catch (_) {
-      return false;
+      return null;
     }
   }));
 
-  return { posted: results.filter(Boolean).length, total: channels.length };
+  return { total: channels.length, hits: hits.filter(Boolean) };
 }
 
 // ── Description rows ─────────────────────────────────────────────────────────
 
-function factionRow(posted) {
-  return `🛡️ **Faction Embed**   ${posted ? OK : NO}`;
+function factionRow(locator, guildId) {
+  if (!locator) return `🛡️ **Faction Embed**   ${NO}`;
+  return `🛡️ **Faction Embed**   ${OK}${jumpSuffix(guildId, locator.channelId, locator.messageId)}`;
 }
 
-function lineupRow(s1, s2) {
-  if (!process.env.LINEUP_CHANNEL) return `📋 **Lineup**   ${NO}`;
-  return `📋 **Lineup**   S1 ${s1 ? OK : NO}  •  S2 ${s2 ? OK : NO}`;
+function serverPairRow(emojiLabel, l1, l2, guildId, envKey) {
+  if (!process.env[envKey]) return `${emojiLabel}   ${NO}`;
+  const s1 = l1 ? `${OK}${jumpSuffix(guildId, l1.channelId, l1.messageId)}` : NO;
+  const s2 = l2 ? `${OK}${jumpSuffix(guildId, l2.channelId, l2.messageId)}` : NO;
+  return `${emojiLabel}   S1 ${s1}  •  S2 ${s2}`;
 }
 
-function serverRow(s1, s2) {
-  if (!process.env.SERVER_DETAILS_CHANNEL) return `🖥️ **Server Details**   ${NO}`;
-  return `🖥️ **Server Details**   S1 ${s1 ? OK : NO}  •  S2 ${s2 ? OK : NO}`;
+function rotationRow(locator, guildId) {
+  if (!locator) return `🗺️ **Map Rotation**   ${NO}`;
+  return `🗺️ **Map Rotation**   ${OK}${jumpSuffix(guildId, locator.channelId, locator.messageId)}`;
 }
 
-function rotationRow(posted) {
-  return `🗺️ **Map Rotation**   ${posted ? OK : NO}`;
-}
-
-function nodesRow({ posted, total }) {
+function nodesRow({ total, hits }, guildId) {
   if (!total) return `📍 **Nodes**   ${NO}`;
+  const posted = hits.length;
   const icon = posted === 0 ? NO : posted === total ? OK : PARTIAL;
-  return `📍 **Nodes**   ${icon}   _(${posted}/${total} channel${total === 1 ? '' : 's'})_`;
+  // Only one jump link (first hit) — too noisy to list all.
+  const suffix = hits.length ? jumpSuffix(guildId, hits[0].channelId, hits[0].messageId) : '';
+  return `📍 **Nodes**   ${icon}${suffix}   _(${posted}/${total} channel${total === 1 ? '' : 's'})_`;
 }
 
 // ── Menus ────────────────────────────────────────────────────────────────────
@@ -248,9 +262,19 @@ function panelMenu() {
   );
 }
 
+// ── Footer ───────────────────────────────────────────────────────────────────
+
+function buildFooter() {
+  const base = `v${pkg.version}  •  deployed ${humanizeAgo(Date.now() - BOT_STARTED_AT_MS)}`;
+  const last = loadLastAction();
+  if (!last) return base;
+  const who = last.userTag || `@${last.userId}`;
+  return `${base}  •  last: ${last.action} by ${who} ${humanizeAgo(Date.now() - last.ts)}`;
+}
+
 // ── Payload builder ──────────────────────────────────────────────────────────
 
-async function buildPanelPayload(client) {
+async function buildPanelPayload(client, guildId) {
   const [fac, l1, l2, s1, s2, rot, nodes] = await Promise.all([
     probeFaction(client),
     probeLineup(client, 'S1'),
@@ -262,27 +286,40 @@ async function buildPanelPayload(client) {
   ]);
 
   const description = [
-    factionRow(fac),
-    lineupRow(l1, l2),
-    serverRow(s1, s2),
-    rotationRow(rot),
-    nodesRow(nodes),
+    factionRow(fac, guildId),
+    serverPairRow('📋 **Lineup**', l1, l2, guildId, 'LINEUP_CHANNEL'),
+    serverPairRow('🖥️ **Server Details**', s1, s2, guildId, 'SERVER_DETAILS_CHANNEL'),
+    rotationRow(rot, guildId),
+    nodesRow(nodes, guildId),
     '',
-    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted_`
+    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted  •  ↗ jump to message_`
   ].join('\n');
 
   const embed = new EmbedBuilder()
     .setTitle('⚙️  Admin Panel')
     .setColor(0x011327)
     .setDescription(description)
-    .setFooter({
-      text: `v${pkg.version}  •  deployed ${humanizeAgo(Date.now() - BOT_STARTED_AT_MS)}`
-    });
+    .setFooter({ text: buildFooter() });
 
   return {
     embeds: [embed],
     components: [factionMenu(), lineupMenu(), serverMenu(), rotNodesMenu(), panelMenu()]
   };
+}
+
+// ── Auto-refresh helper ──────────────────────────────────────────────────────
+// Edits the panel message in place after an admin action. Called from the
+// interaction router after each state-changing handler. Failures are
+// swallowed — we never want a panel-refresh error to leak into the user's
+// action confirmation.
+
+async function refreshPanelMessage(interaction) {
+  try {
+    const msg = interaction.message;
+    if (!msg) return;
+    const payload = await buildPanelPayload(interaction.client, interaction.guildId);
+    await msg.edit(payload);
+  } catch (_) {}
 }
 
 module.exports = {
@@ -293,9 +330,10 @@ module.exports = {
 
   async execute(interaction) {
     await interaction.deferReply({ flags: 64 });
-    const payload = await buildPanelPayload(interaction.client);
+    const payload = await buildPanelPayload(interaction.client, interaction.guildId);
     await interaction.editReply(payload);
   },
 
-  buildPanelPayload
+  buildPanelPayload,
+  refreshPanelMessage
 };
