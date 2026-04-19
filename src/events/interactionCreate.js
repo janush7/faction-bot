@@ -24,6 +24,8 @@ const {
 const { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes } = require('../handlers/interactions/nodesHandler');
 const {
   handleRotationModalSubmit,
+  handleRotationApplyButton,
+  handleRotationCancelButton,
   handleAdminPostRotation,
   handleAdminEditRotation,
   handleAdminAdvanceRotation
@@ -36,7 +38,8 @@ const {
   handleAdminReload,
   handleAdminClearLogsConfirm,
   handleAdminClearLogsCancel,
-  handleAdminClearLogs
+  handleAdminClearLogs,
+  handleAdminHealthcheck
 } = require('../handlers/interactions/adminHandler');
 const { buildPanelPayload, refreshPanelMessage } = require('../commands/admin/panel');
 
@@ -104,11 +107,9 @@ module.exports = {
           );
         }
         if (interaction.customId.startsWith('rotation_edit:')) {
-          return await trackAction(
-            interaction,
-            'Edit Map Rotation',
-            () => handleRotationModalSubmit(interaction)
-          );
+          // Modal submit now shows a preview instead of saving directly;
+          // the lastAction entry is written when the admin clicks Apply.
+          return await handleRotationModalSubmit(interaction);
         }
       } catch (error) {
         logger.error('Error handling modal submit:', error);
@@ -214,6 +215,9 @@ module.exports = {
                   { refresh: false }
                 );
               }
+              if (value === 'healthcheck') {
+                return await handleAdminHealthcheck(interaction);
+              }
               // Clear logs only opens confirm — recorded when user confirms.
               if (value === 'clearlogs') return await handleAdminClearLogsConfirm(interaction);
             }
@@ -316,6 +320,19 @@ module.exports = {
           );
         }
         if (customId === 'admin_edit_rotation')   return await handleAdminEditRotation(interaction);
+      }
+
+      // ── Rotation preview Apply / Cancel (own namespace) ───────────────────
+      if (customId.startsWith('rotation_apply:')) {
+        return await trackAction(
+          interaction,
+          'Edit Map Rotation',
+          () => handleRotationApplyButton(interaction),
+          { refresh: false }
+        );
+      }
+      if (customId.startsWith('rotation_cancel:')) {
+        return await handleRotationCancelButton(interaction);
       }
 
     } catch (error) {

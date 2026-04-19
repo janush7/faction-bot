@@ -10,8 +10,11 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
+const crypto = require('crypto');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { sendLog } = require('./shared');
@@ -209,6 +212,36 @@ async function findRotationMessage(channel) {
 }
 
 // ── Map Rotation Modal Submit ─────────────────────────────────────────────────
+//
+// To avoid accidental overwrites, modal submit does NOT save directly.
+// Instead, the parsed payload is stashed in-memory keyed by a nonce and an
+// ephemeral preview embed + Apply / Cancel buttons is shown. The actual
+// message edit runs only when Apply is clicked.
+
+// nonce → { channelId, messageId, data, rawInputs, ownerId, expiresAt }
+const PENDING_EDITS = new Map();
+const PREVIEW_TTL_MS = 10 * 60 * 1000; // 10 min
+
+function _evictExpiredEdits(now = Date.now()) {
+  for (const [nonce, entry] of PENDING_EDITS) {
+    if (entry.expiresAt <= now) PENDING_EDITS.delete(nonce);
+  }
+}
+
+function _storePendingEdit(entry) {
+  _evictExpiredEdits();
+  const nonce = crypto.randomBytes(6).toString('hex');
+  PENDING_EDITS.set(nonce, { ...entry, expiresAt: Date.now() + PREVIEW_TTL_MS });
+  return nonce;
+}
+
+function _consumePendingEdit(nonce) {
+  _evictExpiredEdits();
+  const entry = PENDING_EDITS.get(nonce);
+  if (!entry) return null;
+  PENDING_EDITS.delete(nonce);
+  return entry;
+}
 
 async function handleRotationModalSubmit(interaction) {
   await interaction.deferReply({ flags: 64 });
@@ -225,15 +258,70 @@ async function handleRotationModalSubmit(interaction) {
   const month1Events = parseEventLines(month1Raw);
   const month2Events = parseEventLines(month2Raw);
 
-  const embed = buildRotationEmbed({ month1Header, month1Events, month2Header, month2Events });
+  const data = { month1Header, month1Events, month2Header, month2Events };
+  const rawInputs = { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw };
+  const previewEmbed = buildRotationEmbed(data);
+
+  const nonce = _storePendingEdit({
+    channelId,
+    messageId,
+    data,
+    rawInputs,
+    ownerId: interaction.user.id,
+  });
+
+  const buttonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`rotation_apply:${nonce}`)
+      .setLabel('Apply')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('✅'),
+    new ButtonBuilder()
+      .setCustomId(`rotation_cancel:${nonce}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('✖️')
+  );
+
+  return interaction.editReply({
+    content: '👀 **Preview** — check the dates/maps below, then click **Apply** to publish or **Cancel** to discard.',
+    embeds: [previewEmbed],
+    components: [buttonsRow],
+  });
+}
+
+async function handleRotationApplyButton(interaction) {
+  const nonce = interaction.customId.split(':')[1] || '';
+  const pending = _consumePendingEdit(nonce);
+
+  if (!pending) {
+    return interaction.update({
+      content: '⏰ Preview expired or already used. Re-open **Edit Map Rotation** to try again.',
+      embeds: [],
+      components: [],
+    });
+  }
+  if (pending.ownerId !== interaction.user.id) {
+    // Return it to the store so the original owner can still use it.
+    PENDING_EDITS.set(nonce, pending);
+    return interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
+  }
+
+  const { channelId, messageId, data, rawInputs } = pending;
+  const embed = buildRotationEmbed(data);
+
+  await interaction.update({
+    content: '⏳ Applying rotation edit…',
+    embeds: [embed],
+    components: [],
+  });
 
   try {
     const ch  = await interaction.client.channels.fetch(channelId);
     const msg = await ch.messages.fetch(messageId);
 
     await msg.edit({ embeds: [embed], content: null });
-
-    saveRotationRaw(messageId, { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw });
+    saveRotationRaw(messageId, rawInputs);
 
     logger.info(`${interaction.user.tag} updated Map Rotation in #${ch.name}`);
 
@@ -248,14 +336,32 @@ async function handleRotationModalSubmit(interaction) {
     );
 
     return interaction.editReply({
-      embeds: [createSuccessEmbed('Map Rotation Updated', 'The rotation has been updated successfully.')]
+      content: '',
+      embeds: [createSuccessEmbed('Map Rotation Updated', 'The rotation has been updated successfully.')],
+      components: [],
     });
   } catch (err) {
     logger.error('Failed to edit Map Rotation:', err);
     return interaction.editReply({
-      embeds: [createErrorEmbed('Error', 'Could not edit the message. It may be too old or I lack permissions.')]
+      content: '',
+      embeds: [createErrorEmbed('Error', 'Could not edit the message. It may be too old or I lack permissions.')],
+      components: [],
     });
   }
+}
+
+async function handleRotationCancelButton(interaction) {
+  const nonce = interaction.customId.split(':')[1] || '';
+  const pending = _consumePendingEdit(nonce);
+  if (pending && pending.ownerId !== interaction.user.id) {
+    PENDING_EDITS.set(nonce, pending);
+    return interaction.reply({ content: '⛔ Only the admin who started this edit can cancel it.', flags: 64 });
+  }
+  return interaction.update({
+    content: '❎ Rotation edit discarded.',
+    embeds: [],
+    components: [],
+  });
 }
 
 // ── Admin: Post Map Rotation ──────────────────────────────────────────────────
@@ -501,6 +607,8 @@ async function handleAdminAdvanceRotation(interaction) {
 
 module.exports = {
   handleRotationModalSubmit,
+  handleRotationApplyButton,
+  handleRotationCancelButton,
   handleAdminPostRotation,
   handleAdminEditRotation,
   handleAdminAdvanceRotation,

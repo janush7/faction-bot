@@ -370,6 +370,11 @@ function panelMenu() {
           .setDescription('Publish default embeds for every 🔴 section (Server, Rotation, Nodes).')
           .setEmoji('📮'),
         new StringSelectMenuOptionBuilder()
+          .setValue('healthcheck')
+          .setLabel('Healthcheck')
+          .setDescription('Verify env, channel perms, roles, and cached message IDs.')
+          .setEmoji('🩺'),
+        new StringSelectMenuOptionBuilder()
           .setValue('clearlogs')
           .setLabel('Clear Log Channel')
           .setDescription('Delete every message in the admin log channel.')
