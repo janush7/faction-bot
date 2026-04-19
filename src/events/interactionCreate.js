@@ -77,6 +77,32 @@ module.exports = {
       return;
     }
 
+    // ── String Select Menus ────────────────────────────────────────────────
+    if (interaction.isStringSelectMenu()) {
+      try {
+        if (interaction.customId === 'admin_server_select') {
+          if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return interaction.reply({
+              embeds: [createErrorEmbed('Permission Denied', 'Only administrators can use these controls.')],
+              flags: 64
+            });
+          }
+          const [action, server] = (interaction.values[0] || '').split(':');
+          if (action === 'post') return await handleAdminPostServer(interaction, server);
+          if (action === 'edit') return await handleAdminEditServer(interaction, server);
+        }
+      } catch (error) {
+        logger.error('Error handling select menu:', error);
+        const reply = { content: '❌ An error occurred.', flags: 64 };
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(reply).catch(() => {});
+        } else {
+          await interaction.reply(reply).catch(() => {});
+        }
+      }
+      return;
+    }
+
     if (!interaction.isButton()) return;
 
     const { customId } = interaction;
