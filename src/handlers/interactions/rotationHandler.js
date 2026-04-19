@@ -331,9 +331,6 @@ async function handleAdminPostRotation(interaction) {
   const data  = getDefaultRotationData();
   const embed = buildRotationEmbed(data);
 
-  // Delete the previously-tracked rotation embed (if any) so repeated Post
-  // clicks don't accumulate duplicate rotation embeds in the channel.
-  // Errors are swallowed — the new post below supersedes the old state.
   const prevMsgId = loadRotationMsgId(channelId);
   if (prevMsgId) {
     const prevMsg = await ch.messages.fetch(prevMsgId).catch(() => null);
