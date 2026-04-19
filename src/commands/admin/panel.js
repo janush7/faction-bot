@@ -11,7 +11,6 @@ const {
 
 const { loadLineupData, loadServerData } = require('../../utils/lineupStore');
 const { loadRotationMsgId }              = require('../../utils/rotationStore');
-const { loadNodesData }                  = require('../../utils/nodesStore');
 const pkg = require('../../../package.json');
 
 const OK = '🟢';
@@ -26,42 +25,129 @@ function humanizeAgo(ms) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-function factionLine() {
-  return `🛡️ **Faction Embed**   ${process.env.FACTION_CHANNEL ? OK : NO}`;
+// ── Status probes ────────────────────────────────────────────────────────────
+// Each probe actually verifies the current state against Discord instead of
+// trusting local cache (cache may point at a message that was manually
+// deleted). Probes return booleans / small summaries. All probes catch
+// their own errors and fall back to "not posted" so the panel never throws.
+
+async function messageExists(client, channelId, messageId) {
+  if (!channelId || !messageId) return false;
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel) return false;
+    const msg = await channel.messages.fetch(messageId);
+    return !!msg;
+  } catch (_) {
+    return false;
+  }
 }
 
-function lineupLine() {
+async function probeFaction(client) {
+  const ch = process.env.FACTION_CHANNEL;
+  if (!ch) return false;
+  try {
+    const channel = await client.channels.fetch(ch);
+    if (!channel) return false;
+    const msgs = await channel.messages.fetch({ limit: 50 });
+    return msgs.some(m =>
+      m.author.id === client.user.id &&
+      m.embeds.some(e => e.title === 'Choose your side!')
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+async function probeLineup(client, server) {
   const ch = process.env.LINEUP_CHANNEL;
-  if (!ch) return `📋 **Lineup**   ${NO}`;
-  return `📋 **Lineup**   S1 ${loadLineupData(ch, 'S1') ? OK : NO}  •  S2 ${loadLineupData(ch, 'S2') ? OK : NO}`;
+  if (!ch) return false;
+  const data = loadLineupData(ch, server);
+  return messageExists(client, ch, data?.messageId);
 }
 
-function serverLine() {
+async function probeServer(client, server) {
   const ch = process.env.SERVER_DETAILS_CHANNEL;
-  if (!ch) return `🖥️ **Server Details**   ${NO}`;
-  return `🖥️ **Server Details**   S1 ${loadServerData(ch, 'S1') ? OK : NO}  •  S2 ${loadServerData(ch, 'S2') ? OK : NO}`;
+  if (!ch) return false;
+  const data = loadServerData(ch, server);
+  return messageExists(client, ch, data?.messageId);
 }
 
-function rotationLine() {
+async function probeRotation(client) {
   const ch = process.env.MAP_ROTATION_CHANNEL;
-  return `🗺️ **Map Rotation**   ${ch && loadRotationMsgId(ch) ? OK : NO}`;
+  if (!ch) return false;
+  return messageExists(client, ch, loadRotationMsgId(ch));
 }
 
-function nodesLine() {
-  const channels = (process.env.NODES_CHANNELS || '').split(',').map(s => s.trim()).filter(Boolean);
-  const suffix = channels.length ? `   _(${channels.length} channel${channels.length === 1 ? '' : 's'})_` : '';
-  return `📍 **Nodes**   ${loadNodesData() ? OK : NO}${suffix}`;
+async function probeNodes(client) {
+  const channels = (process.env.NODES_CHANNELS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  if (!channels.length) return { posted: 0, total: 0 };
+
+  const results = await Promise.all(channels.map(async cid => {
+    try {
+      const ch = await client.channels.fetch(cid);
+      if (!ch) return false;
+      const msgs = await ch.messages.fetch({ limit: 50 });
+      return msgs.some(m =>
+        m.author.id === client.user.id &&
+        m.embeds.some(e => e.title === 'NODES')
+      );
+    } catch (_) {
+      return false;
+    }
+  }));
+
+  return { posted: results.filter(Boolean).length, total: channels.length };
 }
 
-function buildPanelPayload() {
+// ── Description rows ─────────────────────────────────────────────────────────
+
+function factionRow(posted) {
+  return `🛡️ **Faction Embed**   ${posted ? OK : NO}`;
+}
+
+function lineupRow(s1, s2) {
+  if (!process.env.LINEUP_CHANNEL) return `📋 **Lineup**   ${NO}`;
+  return `📋 **Lineup**   S1 ${s1 ? OK : NO}  •  S2 ${s2 ? OK : NO}`;
+}
+
+function serverRow(s1, s2) {
+  if (!process.env.SERVER_DETAILS_CHANNEL) return `🖥️ **Server Details**   ${NO}`;
+  return `🖥️ **Server Details**   S1 ${s1 ? OK : NO}  •  S2 ${s2 ? OK : NO}`;
+}
+
+function rotationRow(posted) {
+  return `🗺️ **Map Rotation**   ${posted ? OK : NO}`;
+}
+
+function nodesRow({ posted, total }) {
+  if (!total) return `📍 **Nodes**   ${NO}`;
+  const icon = posted === 0 ? NO : posted === total ? OK : '🟡';
+  return `📍 **Nodes**   ${icon}   _(${posted}/${total} channel${total === 1 ? '' : 's'})_`;
+}
+
+// ── Payload builder ──────────────────────────────────────────────────────────
+
+async function buildPanelPayload(client) {
+  const [fac, l1, l2, s1, s2, rot, nodes] = await Promise.all([
+    probeFaction(client),
+    probeLineup(client, 'S1'),
+    probeLineup(client, 'S2'),
+    probeServer(client, 'S1'),
+    probeServer(client, 'S2'),
+    probeRotation(client),
+    probeNodes(client)
+  ]);
+
   const description = [
-    factionLine(),
-    lineupLine(),
-    serverLine(),
-    rotationLine(),
-    nodesLine(),
+    factionRow(fac),
+    lineupRow(l1, l2),
+    serverRow(s1, s2),
+    rotationRow(rot),
+    nodesRow(nodes),
     '',
-    `_${OK} posted  •  ${NO} not posted_`
+    `_${OK} posted  •  🟡 partial  •  ${NO} not posted_`
   ].join('\n');
 
   const embed = new EmbedBuilder()
@@ -169,7 +255,9 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    await interaction.reply({ ...buildPanelPayload(), flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    const payload = await buildPanelPayload(interaction.client);
+    await interaction.editReply(payload);
   },
 
   buildPanelPayload

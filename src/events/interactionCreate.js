@@ -137,7 +137,11 @@ module.exports = {
         if (customId === 'admin_clearlogs')          return await handleAdminClearLogsConfirm(interaction);
         if (customId === 'admin_clearlogs_confirm')  return await handleAdminClearLogs(interaction);
         if (customId === 'admin_clearlogs_cancel')   return await handleAdminClearLogsCancel(interaction);
-        if (customId === 'admin_refresh')            return await interaction.update(buildPanelPayload());
+        if (customId === 'admin_refresh') {
+          await interaction.deferUpdate();
+          const payload = await buildPanelPayload(interaction.client);
+          return await interaction.editReply(payload);
+        }
         if (customId.startsWith('admin_post_server')) return await handleAdminPostServer(interaction);
         if (customId.startsWith('admin_edit_caption')) return await handleAdminEditCaption(interaction);
         if (customId.startsWith('admin_edit_server')) return await handleAdminEditServer(interaction);
