@@ -295,16 +295,18 @@ async function handleRotationApplyButton(interaction) {
   const pending = _consumePendingEdit(nonce);
 
   if (!pending) {
-    return interaction.update({
+    await interaction.update({
       content: '⏰ Preview expired or already used. Re-open **Edit Map Rotation** to try again.',
       embeds: [],
       components: [],
     });
+    return false;
   }
   if (pending.ownerId !== interaction.user.id) {
     // Return it to the store so the original owner can still use it.
     PENDING_EDITS.set(nonce, pending);
-    return interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
+    await interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
+    return false;
   }
 
   const { channelId, messageId, data, rawInputs } = pending;
@@ -342,11 +344,12 @@ async function handleRotationApplyButton(interaction) {
     });
   } catch (err) {
     logger.error('Failed to edit Map Rotation:', err);
-    return interaction.editReply({
+    await interaction.editReply({
       content: '',
       embeds: [createErrorEmbed('Error', 'Could not edit the message. It may be too old or I lack permissions.')],
       components: [],
     });
+    return false;
   }
 }
 

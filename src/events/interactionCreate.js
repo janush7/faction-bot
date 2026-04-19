@@ -49,7 +49,12 @@ const { buildPanelPayload, refreshPanelMessage } = require('../commands/admin/pa
 // and dropdown placeholders update without a manual refresh click.
 
 async function trackAction(interaction, label, fn, { refresh = true } = {}) {
-  await fn();
+  const result = await fn();
+  // Handlers may return `false` to signal "nothing was performed" (e.g.
+  // cooldown-blocked, preview expired). In that case we skip both the
+  // audit-log entry and the panel refresh so the footer doesn't show a
+  // phantom "last action" for work that never happened.
+  if (result === false) return;
   saveLastAction(label, interaction.user.id, interaction.user.tag);
   if (refresh) await refreshPanelMessage(interaction);
 }
