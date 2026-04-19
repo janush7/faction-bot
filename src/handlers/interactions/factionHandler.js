@@ -46,6 +46,8 @@ async function handleFactionSelection(interaction, factionKey) {
   }
 
   // Anti-spam: enforce per-user cooldown between faction swaps.
+  // Write the timestamp before any `await` so a rapid second interaction
+  // from the same user sees the updated guard and is rejected.
   const cdSec = cooldownSeconds();
   if (cdSec > 0) {
     const last = lastSwapAtMs.get(interaction.user.id) ?? 0;
@@ -57,6 +59,7 @@ async function handleFactionSelection(interaction, factionKey) {
         flags: 64
       });
     }
+    lastSwapAtMs.set(interaction.user.id, Date.now());
   }
 
   // Remove any other faction role(s) the user currently holds — one faction
@@ -72,7 +75,6 @@ async function handleFactionSelection(interaction, factionKey) {
   }
 
   await member.roles.add(selectedRoleId);
-  lastSwapAtMs.set(interaction.user.id, Date.now());
   logger.info(`${interaction.user.tag} joined ${factionLabel}`);
 
   const logEmbed = new EmbedBuilder()
