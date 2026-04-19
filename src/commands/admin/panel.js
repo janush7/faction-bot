@@ -16,65 +16,57 @@ const pkg = require('../../../package.json');
 
 const OK = '🟢';
 const NO = '🔴';
-const BOT_STARTED_AT = Math.floor(Date.now() / 1000);
+const BOT_STARTED_AT_MS = Date.now();
 
-function channelRef(id) {
-  return id ? `<#${id}>` : '_not set_';
+function humanizeAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60)    return `${s}s ago`;
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
-function factionStatusLine() {
-  const ch = process.env.FACTION_CHANNEL;
-  return `🛡️ **Faction Embed** in ${channelRef(ch)} — ${ch ? OK : NO}`;
+function factionToken() {
+  return `🛡️ ${process.env.FACTION_CHANNEL ? OK : NO}`;
 }
 
-function lineupStatusLine() {
+function lineupToken() {
   const ch = process.env.LINEUP_CHANNEL;
-  if (!ch) return `📋 **Lineup** — channel not configured ${NO}`;
-  const s1 = loadLineupData(ch, 'S1') ? OK : NO;
-  const s2 = loadLineupData(ch, 'S2') ? OK : NO;
-  return `📋 **Lineup** in ${channelRef(ch)} — S1 ${s1}  •  S2 ${s2}`;
+  if (!ch) return `📋 ${NO}`;
+  return `📋 S1${loadLineupData(ch, 'S1') ? OK : NO} S2${loadLineupData(ch, 'S2') ? OK : NO}`;
 }
 
-function serverStatusLine() {
+function serverToken() {
   const ch = process.env.SERVER_DETAILS_CHANNEL;
-  if (!ch) return `🖥️ **Server Details** — channel not configured ${NO}`;
-  const s1 = loadServerData(ch, 'S1') ? OK : NO;
-  const s2 = loadServerData(ch, 'S2') ? OK : NO;
-  return `🖥️ **Server Details** in ${channelRef(ch)} — S1 ${s1}  •  S2 ${s2}`;
+  if (!ch) return `🖥️ ${NO}`;
+  return `🖥️ S1${loadServerData(ch, 'S1') ? OK : NO} S2${loadServerData(ch, 'S2') ? OK : NO}`;
 }
 
-function rotationStatusLine() {
+function rotationToken() {
   const ch = process.env.MAP_ROTATION_CHANNEL;
-  if (!ch) return `🗺️ **Map Rotation** — channel not configured ${NO}`;
-  return `🗺️ **Map Rotation** in ${channelRef(ch)} — ${loadRotationMsgId(ch) ? OK : NO}`;
+  return `🗺️ ${ch && loadRotationMsgId(ch) ? OK : NO}`;
 }
 
-function nodesStatusLine() {
+function nodesToken() {
   const channels = (process.env.NODES_CHANNELS || '').split(',').map(s => s.trim()).filter(Boolean);
-  const posted = loadNodesData() ? OK : NO;
-  const mentions = channels.length ? channels.map(c => `<#${c}>`).join(' ') : '_none_';
-  return `📍 **Nodes** in ${mentions} — cache ${posted}`;
+  return `📍 ${loadNodesData() ? OK : NO}${channels.length ? ` (${channels.length})` : ''}`;
 }
 
 function buildPanelPayload() {
+  const statusLine = [
+    factionToken(),
+    lineupToken(),
+    serverToken(),
+    rotationToken(),
+    nodesToken()
+  ].join('    ');
+
   const embed = new EmbedBuilder()
     .setTitle('⚙️  Admin Panel')
     .setColor(0x011327)
-    .setDescription(
-      [
-        factionStatusLine(),
-        lineupStatusLine(),
-        serverStatusLine(),
-        rotationStatusLine(),
-        nodesStatusLine()
-      ].join('\n')
-    )
+    .setDescription(statusLine)
     .setFooter({
-      text: `v${pkg.version}  •  deployed — click Refresh for live status`
-    })
-    .addFields({
-      name: '\u200b',
-      value: `Deployed <t:${BOT_STARTED_AT}:R>  •  Status fetched <t:${Math.floor(Date.now() / 1000)}:R>`
+      text: `v${pkg.version}  •  deployed ${humanizeAgo(Date.now() - BOT_STARTED_AT_MS)}`
     });
 
   // Row 1 — Faction controls + Lineup edit shortcuts

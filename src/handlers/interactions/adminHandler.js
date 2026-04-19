@@ -152,7 +152,7 @@ async function handleAdminClearLogsConfirm(interaction) {
   const confirmEmbed = new EmbedBuilder()
     .setColor(0xff0000)
     .setTitle('⚠️ Confirm Log Clear')
-    .setDescription(`This will delete **every bot message** in ${target}.\n\nAre you sure?`);
+    .setDescription(`This will delete **all messages** in ${target}.\n\nAre you sure?`);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
