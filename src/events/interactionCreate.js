@@ -107,7 +107,7 @@ module.exports = {
         if (customId === 'admin_reload')          return await handleAdminReload(interaction);
         if (customId === 'admin_clearlogs')       return await handleAdminClearLogs(interaction);
         if (customId === 'admin_post_server')     return await handleAdminPostServer(interaction);
-        if (customId === 'admin_edit_caption')    return await handleAdminEditCaption(interaction);
+        if (customId.startsWith('admin_edit_caption')) return await handleAdminEditCaption(interaction);
         if (customId === 'admin_edit_server')     return await handleAdminEditServer(interaction);
         if (customId === 'admin_post_nodes')      return await handleAdminPostNodes(interaction);
         if (customId === 'admin_edit_nodes')      return await handleAdminEditNodes(interaction);

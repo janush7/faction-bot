@@ -112,12 +112,13 @@ docker compose logs -f bot
 
 ### `/lineup`
 
-1. Use `/lineup image:<file>` to upload a pre-made lineup image.
+1. Use `/lineup server:S1|S2 image:<file>` to upload a pre-made lineup image for the chosen server.
 2. Bot posts it to `LINEUP_CHANNEL` with Discord timestamps for the **next Wednesday**:
    - **Match Positions** — 19:30
    - **SL Briefing** — 19:30
    - **Game Start** — 20:00
-3. An ephemeral ✏️ **Edit Caption** button appears — click it to rename the footer (e.g. `Midweek Frontline – Lineup – 28.03.26`).
+3. Caption includes the server tag (e.g. `Midweek Frontline – S1 – Lineup – 28.03.26`). Each server (S1/S2) gets its own independent embed in the same channel.
+4. An ephemeral ✏️ **Edit Caption (S1/S2)** button appears — click it to rename the footer for that specific server.
 
 ### `/server`
 

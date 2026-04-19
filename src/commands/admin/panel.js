@@ -11,7 +11,7 @@ module.exports = {
       .setTitle('⚙️ Admin Panel')
       .setColor(0x011327)
       .addFields(
-        { name: '📋 Faction & Lineup',  value: 'Reload embed, reset roles, or edit lineup caption', inline: false },
+        { name: '📋 Faction & Lineup',  value: 'Reload embed, reset roles, or edit lineup caption (S1/S2)', inline: false },
         { name: '🖥️ Server Details',    value: 'Post or edit server details',                       inline: false },
         { name: '📍 Nodes',             value: 'Post or edit the Nodes info embed',                 inline: false },
         { name: '🗺️ Map Rotation',      value: 'Post or edit the Map Rotation embed',               inline: false },
@@ -31,8 +31,13 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
         .setEmoji('🔁'),
       new ButtonBuilder()
-        .setCustomId('admin_edit_caption')
-        .setLabel('Edit Caption')
+        .setCustomId('admin_edit_caption:S1')
+        .setLabel('Edit Caption S1')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✏️'),
+      new ButtonBuilder()
+        .setCustomId('admin_edit_caption:S2')
+        .setLabel('Edit Caption S2')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('✏️')
     );
