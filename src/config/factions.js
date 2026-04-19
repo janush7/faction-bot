@@ -14,8 +14,6 @@ const { ButtonStyle } = require('discord.js');
 const FACTIONS = Object.freeze({
   allies_s1: {
     key:     'allies_s1',
-    side:    'allies',
-    server:  'S1',
     envVar:  'ALLIES_ROLE',
     label:   'Allies - S1',
     emoji:   'ALLIES',
@@ -25,8 +23,6 @@ const FACTIONS = Object.freeze({
   },
   axis_s1: {
     key:     'axis_s1',
-    side:    'axis',
-    server:  'S1',
     envVar:  'AXIS_ROLE',
     label:   'Axis - S1',
     emoji:   'AXIS',
@@ -36,8 +32,6 @@ const FACTIONS = Object.freeze({
   },
   allies_s2: {
     key:     'allies_s2',
-    side:    'allies',
-    server:  'S2',
     envVar:  'ALLIES_S2_ROLE',
     label:   'Allies - S2',
     emoji:   'ALLIES',
@@ -47,8 +41,6 @@ const FACTIONS = Object.freeze({
   },
   axis_s2: {
     key:     'axis_s2',
-    side:    'axis',
-    server:  'S2',
     envVar:  'AXIS_S2_ROLE',
     label:   'Axis - S2',
     emoji:   'AXIS',

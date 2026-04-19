@@ -615,7 +615,6 @@ module.exports = {
   handleAdminPostRotation,
   handleAdminEditRotation,
   handleAdminAdvanceRotation,
-  advanceRotationNow,
   maybeAutoAdvanceRotation,
   warmRotationCache
 };

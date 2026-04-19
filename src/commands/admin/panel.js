@@ -457,10 +457,6 @@ module.exports = {
     await interaction.editReply(payload);
   },
 
-  buildPanelPayload,
   refreshPanelMessage,
-  probePanelState,
-  listMissingEnv,
-  nextResetUnix,
-  nextResetLabel
+  probePanelState
 };

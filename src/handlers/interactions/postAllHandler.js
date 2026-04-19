@@ -10,21 +10,16 @@
  * so admins know to run /lineup manually.
  */
 
-const {
-  EmbedBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder
-} = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
 const logger = require('../../utils/logger');
-const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../../utils/embeds');
+const { createFactionEmbed } = require('../../utils/embeds');
 const { createFactionButtons } = require('../../utils/buttons');
 const { sendLog, bulkDeleteFiltered } = require('./shared');
 const { THUMBNAIL_URL, DEFAULT_NODES } = require('../../config/constants');
 const { saveServerData } = require('../../utils/lineupStore');
 const { saveNodesData }  = require('../../utils/nodesStore');
-const { saveRotationRaw, saveRotationMsgId, loadRotationMsgId } = require('../../utils/rotationStore');
+const { saveRotationRaw, saveRotationMsgId } = require('../../utils/rotationStore');
 const { bootstrapRotationData } = require('../../utils/rotationCycle');
 
 const { probePanelState } = require('../../commands/admin/panel');
@@ -81,15 +76,8 @@ async function postServerCore(client, server) {
       { name: '\ud83d\udd12 Password',    value: defaultPass, inline: true }
     );
 
-  const serverSuffix = server ? `:${server}` : '';
-  const editBtn = new ButtonBuilder()
-    .setCustomId(`lineup_editserver:${channel.id}:0${serverSuffix}`)
-    .setLabel(server ? `Edit Server Details (${server})` : 'Edit Server Details')
-    .setStyle(ButtonStyle.Secondary)
-    .setEmoji('\u270f\ufe0f');
-
-  // Send without button first (mirrors existing handler behavior — button is
-  // re-wired via stored messageId on modal open).
+  // Send without button — the edit button is re-wired via stored messageId
+  // on modal open, matching the regular postServerCore handler behavior.
   const msg = await channel.send({ embeds: [embed] });
   saveServerData(channel.id, msg.id, defaultName, defaultPass, server);
   return { posted: true };

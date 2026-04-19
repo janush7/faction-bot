@@ -252,13 +252,7 @@ function shouldAdvanceNow(data, now = new Date()) {
 }
 
 module.exports = {
-  MAP_CYCLE,
   advanceRotationData,
   bootstrapRotationData,
-  detectCycleState,
-  matchCycleMap,
-  nextMapAfter,
-  parseEventBlock,
-  parseMonthHeader,
   shouldAdvanceNow
 };

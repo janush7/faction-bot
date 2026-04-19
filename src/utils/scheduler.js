@@ -132,4 +132,4 @@ async function resetFactionRoles(client) {
   }
 }
 
-module.exports = { startScheduler, startRotationScheduler, resetFactionRoles };
+module.exports = { startScheduler, startRotationScheduler };
