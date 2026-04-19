@@ -83,16 +83,46 @@ module.exports = {
     // ── String Select Menus ────────────────────────────────────────────────
     if (interaction.isStringSelectMenu()) {
       try {
-        if (interaction.customId === 'admin_server_select') {
+        if (interaction.customId.startsWith('admin_')) {
           if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return interaction.reply({
               embeds: [createErrorEmbed('Permission Denied', 'Only administrators can use these controls.')],
               flags: 64
             });
           }
-          const [action, server] = (interaction.values[0] || '').split(':');
-          if (action === 'post') return await handleAdminPostServer(interaction, server);
-          if (action === 'edit') return await handleAdminEditServer(interaction, server);
+          const value = interaction.values[0] || '';
+
+          if (interaction.customId === 'admin_faction_select') {
+            if (value === 'reload') return await handleAdminReload(interaction);
+            if (value === 'reset')  return await handleAdminResetConfirm(interaction);
+          }
+
+          if (interaction.customId === 'admin_lineup_select') {
+            const [action, server] = value.split(':');
+            if (action === 'edit') return await handleAdminEditCaption(interaction, server);
+          }
+
+          if (interaction.customId === 'admin_server_select') {
+            const [action, server] = value.split(':');
+            if (action === 'post') return await handleAdminPostServer(interaction, server);
+            if (action === 'edit') return await handleAdminEditServer(interaction, server);
+          }
+
+          if (interaction.customId === 'admin_rotnodes_select') {
+            if (value === 'rotation:post') return await handleAdminPostRotation(interaction);
+            if (value === 'rotation:edit') return await handleAdminEditRotation(interaction);
+            if (value === 'nodes:post')    return await handleAdminPostNodes(interaction);
+            if (value === 'nodes:edit')    return await handleAdminEditNodes(interaction);
+          }
+
+          if (interaction.customId === 'admin_panel_select') {
+            if (value === 'refresh') {
+              await interaction.deferUpdate();
+              const payload = await buildPanelPayload(interaction.client);
+              return await interaction.editReply(payload);
+            }
+            if (value === 'clearlogs') return await handleAdminClearLogsConfirm(interaction);
+          }
         }
       } catch (error) {
         logger.error('Error handling select menu:', error);
