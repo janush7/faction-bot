@@ -66,11 +66,13 @@ class Logger {
   error(message, error = null) {
     console.error(`${colors.red}[✗]${colors.reset} ${safe(message)}`);
     if (error) {
-      // Error objects may carry secrets in message/stack — redact both if present.
+      // Error objects may carry secrets in message/stack. Print a redacted
+      // view without mutating the caller's Error so surrounding code that
+      // re-reads .message / .stack still sees the original.
       if (error instanceof Error) {
-        if (error.message) error.message = redactSecrets(error.message);
-        if (error.stack)   error.stack   = redactSecrets(error.stack);
-        console.error(error);
+        const redactedMessage = redactSecrets(error.message ?? '');
+        const redactedStack   = redactSecrets(error.stack ?? '');
+        console.error(redactedStack || `${error.name}: ${redactedMessage}`);
       } else {
         console.error(safe(error));
       }
