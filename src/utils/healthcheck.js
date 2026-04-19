@@ -30,7 +30,7 @@ const {
   clearServerData,
 } = require('./lineupStore');
 const { loadRotationMsgId, clearRotationMsgId } = require('./rotationStore');
-const { getAllFactionRoleIds, getFaction } = require('../config/factions');
+const { FACTIONS } = require('../config/factions');
 
 const REQUIRED_ENV_VARS = [
   'GUILD_ID',
@@ -215,29 +215,36 @@ async function runHealthcheck(client, guildId) {
   }
 
   // 4. Faction roles exist + bot role above them
-  const roleIds = getAllFactionRoleIds();
   const botHighest = guild?.members?.me?.roles?.highest ?? null;
-  for (const rid of roleIds) {
+  for (const faction of Object.values(FACTIONS)) {
     total++;
+    const rid = process.env[faction.envVar];
+    const prettyLabel = `role: ${faction.label}`;
+    if (!rid) {
+      issues.push({
+        label: prettyLabel,
+        detail: `${faction.envVar} not set`,
+        hint: `set ${faction.envVar} to the Discord role ID in .env and restart`,
+      });
+      continue;
+    }
     if (!guild) {
-      issues.push({ label: `role: ${rid}`, detail: 'guild unreachable', hint: 'see guild issue above' });
+      issues.push({ label: prettyLabel, detail: 'guild unreachable', hint: 'see guild issue above' });
       continue;
     }
     const role = await guild.roles.fetch(rid).catch(() => null);
     if (!role) {
-      const f = getFaction(rid);
-      const pretty = f ? `${f.name} - ${f.server}` : rid;
       issues.push({
-        label: `role: ${pretty}`,
+        label: prettyLabel,
         detail: 'role not found',
-        hint: `create the role and update its ID in .env (current: ${rid})`,
+        hint: `create the role and update ${faction.envVar} in .env (current: ${rid})`,
       });
       continue;
     }
     if (botHighest && botHighest.comparePositionTo(role) <= 0) {
       issues.push({
-        label: `role: ${role.name}`,
-        detail: `bot role (${botHighest.name}) is not above this role`,
+        label: prettyLabel,
+        detail: `bot role (${botHighest.name}) is not above ${role.name}`,
         hint: 'move the bot role higher in the server role list — Discord rejects role add/remove when the bot sits at or below the target role',
       });
       continue;
