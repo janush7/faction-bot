@@ -68,7 +68,7 @@ async function handleAdminResetCancel(interaction) {
  * Removes faction roles from all members in batches to respect Discord rate limits.
  */
 async function handleAdminReset(interaction) {
-  if (!(await _enforceAdminCooldown(interaction, 'Reset Roles'))) return;
+  if (!(await _enforceAdminCooldown(interaction, 'Reset Roles'))) return false;
 
   await interaction.update({
     embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Resetting faction roles...')],
@@ -199,7 +199,7 @@ async function handleAdminClearLogsCancel(interaction) {
 }
 
 async function handleAdminClearLogs(interaction) {
-  if (!(await _enforceAdminCooldown(interaction, 'Clear Log Channel'))) return;
+  if (!(await _enforceAdminCooldown(interaction, 'Clear Log Channel'))) return false;
 
   await interaction.update({
     embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Clearing logs...')],
