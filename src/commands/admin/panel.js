@@ -39,6 +39,18 @@ function listMissingEnv() {
 // Default: Wednesday 22:00 Europe/Warsaw. Configurable via RESET_DAY (0-6)
 // and RESET_HOUR (0-23). Returns a Unix seconds timestamp for the next
 // occurrence after `now`.
+const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Human-readable label for the configured auto-reset slot,
+// e.g. "Wed 22:00 Warsaw".
+function nextResetLabel() {
+  const day  = parseInt(process.env.RESET_DAY  ?? '3', 10);
+  const hour = parseInt(process.env.RESET_HOUR ?? '22', 10);
+  if (!Number.isFinite(day) || !Number.isFinite(hour))    return null;
+  if (day < 0 || day > 6 || hour < 0 || hour > 23)        return null;
+  return `${DAY_NAMES_SHORT[day]} ${String(hour).padStart(2, '0')}:00 Warsaw`;
+}
+
 function nextResetUnix(now = new Date()) {
   const day  = parseInt(process.env.RESET_DAY  ?? '3', 10);
   const hour = parseInt(process.env.RESET_HOUR ?? '22', 10);
@@ -217,7 +229,7 @@ function serverPairRow(emojiLabel, l1, l2, guildId, envKey) {
   if (!process.env[envKey]) return `${emojiLabel}   ${NO}`;
   const s1 = l1 ? `${OK}${jumpSuffix(guildId, l1.channelId, l1.messageId)}` : NO;
   const s2 = l2 ? `${OK}${jumpSuffix(guildId, l2.channelId, l2.messageId)}` : NO;
-  return `${emojiLabel}   S1 ${s1}  •  S2 ${s2}`;
+  return `${emojiLabel}   S1 ${s1} • S2 ${s2}`;
 }
 
 function rotationRow(locator, guildId) {
@@ -393,7 +405,9 @@ async function buildPanelPayload(client, guildId) {
     nodesRow(nodes, guildId)
   ];
   if (nextReset) {
-    rows.push(`⏰ **Auto-Reset**   <t:${nextReset}:R>`);
+    const label = nextResetLabel();
+    const suffix = label ? `   _(${label})_` : '';
+    rows.push(`⏰ **Auto-Reset**   <t:${nextReset}:R>${suffix}`);
   }
   if (missingEnv.length) {
     rows.push(`⚠️ **Env**   ${missingEnv.length} missing: \`${missingEnv.slice(0, 6).join('`, `')}\`${missingEnv.length > 6 ? '…' : ''}`);
@@ -444,5 +458,6 @@ module.exports = {
   refreshPanelMessage,
   probePanelState,
   listMissingEnv,
-  nextResetUnix
+  nextResetUnix,
+  nextResetLabel
 };
