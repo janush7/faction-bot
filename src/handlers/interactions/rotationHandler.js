@@ -116,13 +116,62 @@ async function readRotationFromEmbed(client, channelId, messageId) {
 }
 
 /**
- * Refreshes the raw cache in the background so the next Edit Rotation click
- * sees the latest embed content. Fires-and-forgets — no await by caller.
+ * Fetches the live rotation message from Discord, preferring the stored messageId
+ * but falling back to a channel scan when that message is missing or isn't a rotation
+ * embed. Updates the stored messageId when a newer rotation is found.
+ * Returns the refreshed raw data, or null if nothing usable was found.
+ */
+async function syncRotationFromChannel(client, channelId, storedMsgId) {
+  try {
+    const ch = await client.channels.fetch(channelId);
+    if (!ch) return null;
+
+    let msg = storedMsgId
+      ? await ch.messages.fetch(storedMsgId).catch(() => null)
+      : null;
+
+    const isRotation = (m) => m?.embeds?.[0]?.author?.name === 'Map Rotation';
+
+    if (!isRotation(msg)) {
+      msg = await findRotationMessage(ch);
+    }
+    if (!isRotation(msg)) return null;
+
+    const fields = msg.embeds[0].fields ?? [];
+    if (fields.length < 2) return null;
+
+    const data = {
+      month1Header: fields[0].name,
+      month1Events: reverseParseEventLines(fields[0].value),
+      month2Header: fields[1].name,
+      month2Events: reverseParseEventLines(fields[1].value)
+    };
+
+    if (msg.id !== storedMsgId) {
+      saveRotationMsgId(channelId, msg.id);
+    }
+    saveRotationRaw(msg.id, data);
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Fires-and-forgets a sync so the next Edit Rotation click sees fresh data.
  */
 function refreshRotationRawInBackground(client, channelId, messageId) {
-  readRotationFromEmbed(client, channelId, messageId).then(data => {
-    if (data) saveRotationRaw(messageId, data);
-  }).catch(() => {});
+  syncRotationFromChannel(client, channelId, messageId).catch(() => {});
+}
+
+/**
+ * Runs on bot startup so the rotation cache is warm before any user clicks Edit.
+ */
+async function warmRotationCache(client) {
+  const channelId = getMapRotationChannelId();
+  if (!channelId) return;
+  const storedMsgId = loadRotationMsgId(channelId);
+  await syncRotationFromChannel(client, channelId, storedMsgId);
 }
 
 /**
@@ -364,5 +413,6 @@ async function handleAdminEditRotation(interaction) {
 module.exports = {
   handleRotationModalSubmit,
   handleAdminPostRotation,
-  handleAdminEditRotation
+  handleAdminEditRotation,
+  warmRotationCache
 };
