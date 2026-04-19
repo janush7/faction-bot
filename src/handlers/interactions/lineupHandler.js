@@ -77,45 +77,21 @@ async function handleLineupCaptionSubmit(interaction) {
     const messageId = cached?.messageId ?? modalMessageId;
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
-    const existingAttachment = oldMsg.attachments.first();
 
-    const updated = new EmbedBuilder()
-      .setColor(old.color)
-      .setFooter({ text: newCaption });
+    // Minimal edit: copy the entire embed as-is and ONLY change the footer.
+    // Previous attempts rebuilt the embed from scratch, which replaced the
+    // image reference (attachment://lineup.png) with a CDN URL. That broke
+    // the embed→attachment link and caused the image to render as a
+    // standalone preview above the embed. By preserving the original embed
+    // data (including the attachment:// image reference), Discord keeps the
+    // image inside the embed where it belongs.
+    const updated = EmbedBuilder.from(old);
+    updated.setFooter({ text: newCaption });
 
-    if (old.fields?.length) updated.addFields(...old.fields);
-    if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
+    logger.info(`Editing lineup ${messageId}: image=${old.image?.url}, attachments=${oldMsg.attachments.size}`);
 
-    // Edit-in-place reliably breaks the embed→attachment link on Discord's
-    // side: the image either vanishes or renders as a standalone preview
-    // above the embed. Instead, delete the old message and send a fresh one
-    // with the same image and the new caption. Download the image to a
-    // Buffer first so Discord treats it as a brand-new upload (passing a
-    // CDN URL directly still caused duplication).
-    if (existingAttachment) {
-      const attachmentName = existingAttachment.name || 'lineup.png';
-      updated.setImage(`attachment://${attachmentName}`);
-
-      const res = await fetch(existingAttachment.url);
-      if (!res.ok) throw new Error(`Failed to download attachment: ${res.status}`);
-      const buffer = Buffer.from(await res.arrayBuffer());
-
-      const newMsg = await ch.send({
-        embeds: [updated],
-        files: [{ attachment: buffer, name: attachmentName }]
-      });
-
-      await oldMsg.delete().catch(e =>
-        logger.warn(`Could not delete old lineup message ${messageId}: ${e.message}`)
-      );
-
-      saveLineupData(channelId, newMsg.id, newCaption);
-    } else {
-      // No image on the original — just edit in place.
-      if (old.image?.url) updated.setImage(old.image.url);
-      await oldMsg.edit({ embeds: [updated] });
-      saveLineupData(channelId, messageId, newCaption);
-    }
+    await oldMsg.edit({ embeds: [updated] });
+    saveLineupData(channelId, messageId, newCaption);
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
     await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, flags: 64 });
