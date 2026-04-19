@@ -1,164 +1,119 @@
 # MWF Faction Bot
 
-A Discord bot for **Midweek Frontline** — handles faction selection (Allies / Axis), lineup posting, and server details publishing.
+Discord bot for **Midweek Frontline** — faction selection, lineups, server
+details, map rotation, and node info, all driven from a single admin panel.
 
 ## Features
 
-- **Choose Your Side** — persistent embed with Allies S1 / Axis S1 / Allies S2 / Axis S2 buttons that assign roles (one faction at a time across both servers)
-- **Lineup Posting** (`/lineup`) — upload a pre-made lineup image with auto-calculated Discord timestamps for the next Wednesday
-- **Server Details** (`/server`) — post server name & password to a dedicated channel
-- **In-place Editing** (`/edit`) — edit the caption of the last lineup or the server details without re-posting
-- **Admin Panel** (`/panel`) — reset roles, reload faction embed, clear logs
-- **Weekly Auto-Reset** — automatically removes all Allies/Axis (S1 + S2) roles every Wednesday at 22:00 Warsaw time
-- **Custom Emojis** — ALLIES and AXIS emojis are auto-uploaded to the server on startup
-- No database required — fully stateless
+- **Faction selection** — persistent embed with Allies/Axis buttons for S1 and
+  S2, with a per-user cooldown to prevent role-swap spam.
+- **Weekly auto-reset** — clears all faction roles every Wednesday at
+  22:00 Europe/Warsaw (configurable).
+- **`/panel` admin control** — per-feature dropdowns for Faction, Lineup,
+  Server Details, Map Rotation & Nodes, and Panel utilities.
+- **Lineup posting** (`/lineup`) — post a pre-made lineup image for S1 or S2
+  with auto-calculated Wednesday timestamps.
+- **Server details** — post and edit server name/password for S1 and S2
+  (managed from the panel).
+- **Rolling map rotation** — embed shows a 2-month window; a daily scheduler
+  auto-advances months as they pass, auto-filling Wednesdays from a fixed
+  cycle (Utah → SMDM → Omaha → Carentan → SME).
+- **Node info** — post/edit an identical NODES embed across every channel
+  listed in `NODES_CHANNELS`.
+- **Healthcheck** — validates env vars, channel permissions, and faction-role
+  hierarchy, with actionable hints for each issue.
+- **Audit logging** — every admin action is logged to `ADMIN_LOG_CHANNEL`;
+  the panel footer shows the most recent action.
 
----
-
-## Setup
-
-### 1. Clone & install dependencies
+## Quick start (Docker)
 
 ```bash
 git clone https://github.com/janush7/faction-bot.git
 cd faction-bot
-npm install
-```
-
-### 2. Configure environment variables
-
-```bash
 cp .env.example .env
-nano .env
+# edit .env and fill in IDs/tokens
+docker compose up -d --build
+docker compose run --rm bot node deploy-commands.js   # once, and after adding/editing slash commands
 ```
 
-| Variable | Required | Description |
-|---|---|---|
-| `TOKEN` | ✅ | Discord bot token |
-| `CLIENT_ID` | ✅ | Bot application ID |
-| `GUILD_ID` | ✅ | Your server (guild) ID |
-| `CHANNEL_ID` | ✅ | Channel where the faction embed is posted |
-| `ALLIES_ROLE` | ✅ | Role ID for the Allies S1 faction |
-| `AXIS_ROLE` | ✅ | Role ID for the Axis S1 faction |
-| `ALLIES_S2_ROLE` | ✅ | Role ID for the Allies S2 faction |
-| `AXIS_S2_ROLE` | ✅ | Role ID for the Axis S2 faction |
-| `ADMIN_LOG_CHANNEL` | ✅ | Channel ID for admin & faction selection logs |
-| `LINEUP_CHANNEL` | ✅ | Channel ID where lineups are posted |
-| `SERVER_DETAILS_CHANNEL` | ✅ | Channel ID where server details are posted |
-| `SERVER_NAME` | ⬜ | Default server name (default: `HCIA EU 1`) |
-| `SERVER_PASSWORD` | ⬜ | Default server password (default: `MWFTIME`) |
-| `RESET_DAY` | ⬜ | Day of weekly reset, 0=Sun … 6=Sat (default: `3` = Wednesday) |
-| `RESET_HOUR` | ⬜ | Hour of weekly reset in Warsaw time (default: `22`) |
-
-### 3. Deploy slash commands
+Update after a new release:
 
 ```bash
-npm run deploy
-# or with Docker:
-docker compose run --rm bot node deploy-commands.js
+git pull && docker compose up -d --build
 ```
 
-> **Run this every time you add or change a slash command.**
+Logs: `docker compose logs -f bot`.
 
-### 4. Start the bot
+## Local run (without Docker)
 
 ```bash
+npm install
+cp .env.example .env   # edit
+npm run deploy         # register slash commands (once)
 npm start
 ```
 
----
+Note: stores (lineup, rotation, nodes, last-action) persist under `/app/data`
+in the Docker image. When running outside Docker the bot will fail to write
+to that path — create the directory (`sudo mkdir -p /app/data && sudo chown
+$USER /app/data`) or adapt the paths in `src/utils/*Store.js`.
 
-## Docker
+## Environment variables
 
-### First run
+See [`.env.example`](./.env.example) for the full list. Required:
 
-```bash
-docker compose up -d --build
-docker compose run --rm bot node deploy-commands.js
-```
+| Variable | Description |
+|---|---|
+| `BOT_TOKEN` | Discord bot token |
+| `CLIENT_ID` | Bot application ID |
+| `GUILD_ID` | Target server (guild) ID |
+| `FACTION_CHANNEL` | Where the "Choose your side!" embed is posted |
+| `ALLIES_ROLE`, `AXIS_ROLE` | S1 faction role IDs |
+| `ALLIES_S2_ROLE`, `AXIS_S2_ROLE` | S2 faction role IDs |
+| `ADMIN_LOG_CHANNEL` | Channel for admin + faction selection logs |
+| `LINEUP_CHANNEL` | Channel for lineup posts |
+| `SERVER_DETAILS_CHANNEL` | Channel for server details embeds |
+| `MAP_ROTATION_CHANNEL` | Channel for the map rotation embed |
+| `NODES_CHANNELS` | Comma-separated list of channels for the NODES embed |
 
-### Update to latest
+Optional: `SERVER_S{1,2}_{NAME,PASSWORD}`, `RESET_DAY`, `RESET_HOUR`,
+`FACTION_SWAP_COOLDOWN_SECONDS`, `LINEUP_COMMAND_CHANNEL`, `LOG_LEVEL`.
 
-```bash
-git fetch --all && git reset --hard origin/main
-docker compose up -d --build
-```
+## Slash commands
 
-### Force full rebuild (if Docker cached an old layer)
-
-```bash
-docker compose down
-docker compose build --no-cache
-docker compose up -d
-```
-
-### View logs
-
-```bash
-docker compose logs -f bot
-```
-
----
-
-## Commands
-
-| Command | Description | Permission |
+| Command | Permission | Purpose |
 |---|---|---|
-| `/panel` | Open the admin control panel (Reset Roles / Reload Embed / Clear Logs) | Administrator |
-| `/lineup` | Post a lineup image with Wednesday event timestamps | Administrator |
-| `/server` | Post server name & password to the server details channel | Administrator |
-| `/edit lineup` | Edit the caption of the last lineup embed | Administrator |
-| `/edit server` | Edit the server name/password of the last server details embed | Administrator |
+| `/panel` | Administrator | Open the admin control panel |
+| `/lineup server:<S1\|S2> image:<file>` | Administrator | Post a lineup image |
+| `/ping` | anyone | Bot latency check |
 
-### `/lineup`
+Everything else (posting/editing server details, rotation, nodes, reloading
+the faction embed, clearing logs, running the healthcheck) is done from
+**`/panel`**.
 
-1. Use `/lineup server:S1|S2 image:<file>` to upload a pre-made lineup image for the chosen server.
-2. Bot posts it to `LINEUP_CHANNEL` with Discord timestamps for the **next Wednesday**:
-   - **Match Positions** — 19:30
-   - **SL Briefing** — 19:30
-   - **Game Start** — 20:00
-3. Caption includes the server tag (e.g. `Midweek Frontline – S1 – Lineup – 28.03.26`). Each server (S1/S2) gets its own independent embed in the same channel.
-4. An ephemeral ✏️ **Edit Caption (S1/S2)** button appears — click it to rename the footer for that specific server.
+## Panel actions
 
-### `/server`
+The panel shows one status row per feature (🟢 posted, 🟡 partial, 🔴 not
+posted, ↗ jump link) and five dropdowns:
 
-Posts a **Server Details** embed to `SERVER_DETAILS_CHANNEL` with the configured server name and password. An ephemeral 🖥️ **Edit Server Details** button appears to update the values in place.
+- 🛡️ **Faction Embed** — Reload, Reset Roles
+- 📋 **Lineup** — Edit caption S1/S2
+- 🖥️ **Server Details** — Post/Edit S1/S2
+- 🗺️ 📍 **Map Rotation & Nodes** — Post/Edit Rotation, Advance (+1 month),
+  Post/Edit Nodes
+- 🛠️ **Panel** — Refresh Status, Post All Missing, Healthcheck, Clear Log Channel
 
-### `/edit`
+Destructive actions (Reset Roles, Clear Log Channel) require ephemeral
+confirmation and are rate-limited per user.
 
-Finds the **last bot message** in the relevant channel and opens a modal to edit it — no message ID needed.
+## Scheduled jobs
 
-- `/edit lineup` → edit the footer caption of the last lineup
-- `/edit server` → edit the server name and password of the last server details embed
+- **Weekly reset** — removes Allies/Axis S1+S2 roles every `RESET_DAY` at
+  `RESET_HOUR`:00 Warsaw time (default Wednesday 22:00).
+- **Rotation auto-advance** — daily at 00:30 Warsaw; when the first month of
+  the rotation embed is entirely in the past, shifts the window forward one
+  month and auto-fills new Wednesdays from the map cycle.
 
----
+## License
 
-## Admin Panel
-
-Use `/panel` (administrators only) to access:
-
-- 🔄 **Reset Roles** — removes all Allies/Axis (S1 + S2) roles from every member immediately
-- 📋 **Reload Embed** — deletes previous bot embeds from `CHANNEL_ID` and posts a fresh "Choose your side!" embed
-- 🧹 **Clear Logs** — bulk-deletes all messages from `ADMIN_LOG_CHANNEL`
-
-All admin actions are logged to `ADMIN_LOG_CHANNEL`.
-
----
-
-## Weekly Auto-Reset
-
-Every **Wednesday at 22:00 Warsaw time**, the bot automatically:
-1. Removes all ALLIES/AXIS S1 and S2 roles from every member
-2. Logs the result (members affected, any errors) to `ADMIN_LOG_CHANNEL`
-
-Configurable via `RESET_DAY` and `RESET_HOUR` in `.env`.
-
----
-
-## Bot Permissions Required
-
-- `Manage Roles` — assign/remove faction roles
-- `Manage Emojis` — auto-upload ALLIES and AXIS custom emojis on startup
-- `Send Messages` / `Embed Links` — post embeds
-- `Read Message History` — find previous bot messages for editing and bulk-delete
-- `Manage Messages` — bulk-delete messages in log channel
+Internal / community project; no formal license. Issues and PRs welcome.
