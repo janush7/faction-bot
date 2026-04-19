@@ -22,6 +22,11 @@ const {
   saveRotationMsgId,
   loadRotationMsgId
 } = require('../../utils/rotationStore');
+const {
+  advanceRotationData,
+  bootstrapRotationData,
+  shouldAdvanceNow
+} = require('../../utils/rotationCycle');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -387,9 +392,119 @@ async function handleAdminEditRotation(interaction) {
   await interaction.showModal(modal);
 }
 
+// ── Admin: Advance Rotation (manual + scheduler) ──────────────────────────────
+
+/**
+ * Core routine that advances the live Map Rotation embed by one month.
+ * - If no embed exists, posts a fresh bootstrap.
+ * - If an embed exists, computes the next rolling window (month2 → month1,
+ *   new month generated below) and edits the message in place.
+ *
+ * Returns { ok, action, data, channelId, messageId } on success, or
+ * { ok: false, reason } on failure.
+ */
+async function advanceRotationNow(client) {
+  const channelId = getMapRotationChannelId();
+  if (!channelId) return { ok: false, reason: 'MAP_ROTATION_CHANNEL not set' };
+
+  const ch = await client.channels.fetch(channelId).catch(() => null);
+  if (!ch) return { ok: false, reason: `Rotation channel <#${channelId}> unreachable` };
+
+  const storedMsgId = loadRotationMsgId(channelId);
+  const live = await syncRotationFromChannel(client, channelId, storedMsgId);
+
+  if (!live) {
+    const fresh = bootstrapRotationData();
+    const msg   = await ch.send({ embeds: [buildRotationEmbed(fresh)] });
+    saveRotationMsgId(channelId, msg.id);
+    saveRotationRaw(msg.id, fresh);
+    return { ok: true, action: 'bootstrap', data: fresh, channelId, messageId: msg.id };
+  }
+
+  const next = advanceRotationData(live);
+  const msgId = loadRotationMsgId(channelId);
+  try {
+    const msg = await ch.messages.fetch(msgId);
+    await msg.edit({ embeds: [buildRotationEmbed(next)], content: null });
+    saveRotationRaw(msgId, next);
+    return { ok: true, action: 'advance', data: next, channelId, messageId: msgId };
+  } catch (err) {
+    logger.error(`advanceRotationNow failed to edit message ${msgId}: ${err.message}`);
+    return { ok: false, reason: 'Could not edit rotation message (deleted or missing permissions).' };
+  }
+}
+
+/**
+ * Scheduler-friendly wrapper: advances only when month1 events are entirely
+ * in the past. Safe to invoke on a daily cron.
+ */
+async function maybeAutoAdvanceRotation(client) {
+  const channelId = getMapRotationChannelId();
+  if (!channelId) return { skipped: 'no channel' };
+
+  const storedMsgId = loadRotationMsgId(channelId);
+  const live = storedMsgId
+    ? await syncRotationFromChannel(client, channelId, storedMsgId)
+    : null;
+
+  if (!live) return { skipped: 'no live rotation' };
+  if (!shouldAdvanceNow(live)) return { skipped: 'month1 not fully elapsed' };
+
+  const result = await advanceRotationNow(client);
+  if (result.ok) {
+    logger.info(`Auto-advanced rotation to ${result.data.month1Header} / ${result.data.month2Header}`);
+    await sendLog(client, new EmbedBuilder()
+      .setColor(0x011327)
+      .setTitle('⏩ Rotation Auto-Advanced')
+      .setDescription(`Rolled forward to **${result.data.month1Header}** / **${result.data.month2Header}**.`)
+      .setTimestamp()
+    );
+  }
+  return result;
+}
+
+async function handleAdminAdvanceRotation(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const result = await advanceRotationNow(interaction.client);
+  if (!result.ok) {
+    return interaction.editReply({ embeds: [createErrorEmbed('Advance Failed', result.reason)] });
+  }
+
+  logger.info(`${interaction.user.tag} advanced Map Rotation (${result.action})`);
+
+  await sendLog(interaction.client, new EmbedBuilder()
+    .setColor(0x011327)
+    .setTitle(result.action === 'bootstrap' ? 'Map Rotation Bootstrapped' : 'Map Rotation Advanced')
+    .addFields(
+      { name: 'Admin',  value: `<@${interaction.user.id}>`,                 inline: true },
+      { name: 'Window', value: `${result.data.month1Header} → ${result.data.month2Header}`, inline: true }
+    )
+    .setTimestamp()
+  );
+
+  const lines = [
+    `**${result.data.month1Header}**`,
+    result.data.month1Events || '— No events scheduled —',
+    '',
+    `**${result.data.month2Header}**`,
+    result.data.month2Events || '— No events scheduled —'
+  ].join('\n').slice(0, 4000);
+
+  return interaction.editReply({
+    embeds: [createSuccessEmbed(
+      result.action === 'bootstrap' ? 'Rotation Bootstrapped' : 'Rotation Advanced',
+      lines
+    )]
+  });
+}
+
 module.exports = {
   handleRotationModalSubmit,
   handleAdminPostRotation,
   handleAdminEditRotation,
+  handleAdminAdvanceRotation,
+  advanceRotationNow,
+  maybeAutoAdvanceRotation,
   warmRotationCache
 };

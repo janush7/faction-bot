@@ -12,6 +12,82 @@ const { loadRotationMsgId }              = require('../../utils/rotationStore');
 const { loadLastAction }                 = require('../../utils/lastActionStore');
 const pkg = require('../../../package.json');
 
+// ── Required env vars (warns if any are missing) ─────────────────────────────
+// Each entry is either a single string (required) or an array of two+
+// strings (any one of which satisfies the check — used for legacy fallback).
+const REQUIRED_ENV_VARS = [
+  'GUILD_ID',
+  'FACTION_CHANNEL',
+  'LINEUP_CHANNEL',
+  'SERVER_DETAILS_CHANNEL',
+  'MAP_ROTATION_CHANNEL',
+  'NODES_CHANNELS',
+  ['SERVER_S1_NAME',     'SERVER_NAME'],
+  ['SERVER_S1_PASSWORD', 'SERVER_PASSWORD'],
+  ['SERVER_S2_NAME',     'SERVER_NAME'],
+  ['SERVER_S2_PASSWORD', 'SERVER_PASSWORD']
+];
+
+function listMissingEnv() {
+  return REQUIRED_ENV_VARS.filter(entry => {
+    const keys = Array.isArray(entry) ? entry : [entry];
+    return !keys.some(k => process.env[k] && String(process.env[k]).trim() !== '');
+  }).map(entry => Array.isArray(entry) ? entry[0] : entry);
+}
+
+// ── Next scheduled auto-reset (kept in sync with utils/scheduler.js) ─────────
+// Default: Wednesday 22:00 Europe/Warsaw. Configurable via RESET_DAY (0-6)
+// and RESET_HOUR (0-23). Returns a Unix seconds timestamp for the next
+// occurrence after `now`.
+function nextResetUnix(now = new Date()) {
+  const day  = parseInt(process.env.RESET_DAY  ?? '3', 10);
+  const hour = parseInt(process.env.RESET_HOUR ?? '22', 10);
+  if (!Number.isFinite(day) || !Number.isFinite(hour))    return null;
+  if (day < 0 || day > 6 || hour < 0 || hour > 23)        return null;
+
+  // Work in Warsaw clock: project `now` into Warsaw-local Y/M/D/hh/mm so we
+  // can compare "today in Warsaw" against the configured day/hour.
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Warsaw',
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+    hour:     '2-digit',
+    minute:   '2-digit',
+    second:   '2-digit',
+    weekday:  'short',
+    hour12:   false
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const todayDow   = weekdayMap[parts.weekday];
+
+  let daysAhead = (day - todayDow + 7) % 7;
+  const nowHour = parseInt(parts.hour, 10);
+  const nowMin  = parseInt(parts.minute, 10);
+  if (daysAhead === 0 && (nowHour > hour || (nowHour === hour && nowMin >= 1))) {
+    daysAhead = 7;
+  }
+
+  // Compute target Warsaw-local Y/M/D.
+  const baseY = parseInt(parts.year,  10);
+  const baseM = parseInt(parts.month, 10) - 1; // 0-11
+  const baseD = parseInt(parts.day,   10);
+  const target = new Date(Date.UTC(baseY, baseM, baseD + daysAhead, 0, 0, 0));
+
+  // Convert (target date + hour:00 Warsaw) to a UTC unix second via the
+  // same DST-aware trick used elsewhere in the codebase.
+  const y = target.getUTCFullYear();
+  const m = target.getUTCMonth();
+  const d = target.getUTCDate();
+  const probe = new Date(Date.UTC(y, m, d, hour, 0, 0));
+  const utcMs    = new Date(probe.toLocaleString('en-US', { timeZone: 'UTC' })).getTime();
+  const warsawMs = new Date(probe.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' })).getTime();
+  const offsetHours = Math.round((warsawMs - utcMs) / 3_600_000);
+  const utcHour = hour - offsetHours;
+  return Math.floor(Date.UTC(y, m, d, utcHour, 0, 0) / 1000);
+}
+
 const OK = '🟢';
 const NO = '🔴';
 const PARTIAL = '🟡';
@@ -110,6 +186,24 @@ async function probeNodes(client) {
   }));
 
   return { total: channels.length, hits: hits.filter(Boolean) };
+}
+
+/**
+ * Fan-out probe that returns every embed's posted state. Used by the panel
+ * renderer and by any admin action that needs to know which embeds are
+ * missing (e.g. "Post all missing").
+ */
+async function probePanelState(client) {
+  const [fac, l1, l2, s1, s2, rot, nodes] = await Promise.all([
+    probeFaction(client),
+    probeLineup(client, 'S1'),
+    probeLineup(client, 'S2'),
+    probeServer(client, 'S1'),
+    probeServer(client, 'S2'),
+    probeRotation(client),
+    probeNodes(client)
+  ]);
+  return { faction: fac, lineupS1: l1, lineupS2: l2, serverS1: s1, serverS2: s2, rotation: rot, nodes };
 }
 
 // ── Description rows ─────────────────────────────────────────────────────────
@@ -229,6 +323,11 @@ function rotNodesMenu() {
           .setDescription('Edit the current rotation events.')
           .setEmoji('✏️'),
         new StringSelectMenuOptionBuilder()
+          .setValue('rotation:advance')
+          .setLabel('Advance Rotation (+1 month)')
+          .setDescription('Scroll months forward and auto-fill Wednesdays via Utah→SMDM→Omaha→Carentan→SME cycle.')
+          .setEmoji('⏩'),
+        new StringSelectMenuOptionBuilder()
           .setValue('nodes:post')
           .setLabel('Post Nodes')
           .setDescription('Publish the NODES embed to every configured channel.')
@@ -254,6 +353,11 @@ function panelMenu() {
           .setDescription('Re-check posted state of every embed.')
           .setEmoji('🔄'),
         new StringSelectMenuOptionBuilder()
+          .setValue('postall')
+          .setLabel('Post All Missing')
+          .setDescription('Publish default embeds for every 🔴 section (Server, Rotation, Nodes).')
+          .setEmoji('📮'),
+        new StringSelectMenuOptionBuilder()
           .setValue('clearlogs')
           .setLabel('Clear Log Channel')
           .setDescription('Delete every message in the admin log channel.')
@@ -275,25 +379,27 @@ function buildFooter() {
 // ── Payload builder ──────────────────────────────────────────────────────────
 
 async function buildPanelPayload(client, guildId) {
-  const [fac, l1, l2, s1, s2, rot, nodes] = await Promise.all([
-    probeFaction(client),
-    probeLineup(client, 'S1'),
-    probeLineup(client, 'S2'),
-    probeServer(client, 'S1'),
-    probeServer(client, 'S2'),
-    probeRotation(client),
-    probeNodes(client)
-  ]);
+  const state = await probePanelState(client);
+  const { faction: fac, lineupS1: l1, lineupS2: l2, serverS1: s1, serverS2: s2, rotation: rot, nodes } = state;
 
-  const description = [
+  const missingEnv = listMissingEnv();
+  const nextReset  = nextResetUnix();
+
+  const rows = [
     factionRow(fac, guildId),
     serverPairRow('📋 **Lineup**', l1, l2, guildId, 'LINEUP_CHANNEL'),
     serverPairRow('🖥️ **Server Details**', s1, s2, guildId, 'SERVER_DETAILS_CHANNEL'),
     rotationRow(rot, guildId),
-    nodesRow(nodes, guildId),
-    '',
-    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted  •  ↗ jump to message_`
-  ].join('\n');
+    nodesRow(nodes, guildId)
+  ];
+  if (nextReset) {
+    rows.push(`⏰ **Auto-Reset**   <t:${nextReset}:R>`);
+  }
+  if (missingEnv.length) {
+    rows.push(`⚠️ **Env**   ${missingEnv.length} missing: \`${missingEnv.slice(0, 6).join('`, `')}\`${missingEnv.length > 6 ? '…' : ''}`);
+  }
+  rows.push('', `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted  •  ↗ jump to message_`);
+  const description = rows.join('\n');
 
   const embed = new EmbedBuilder()
     .setTitle('⚙️  Admin Panel')
@@ -335,5 +441,8 @@ module.exports = {
   },
 
   buildPanelPayload,
-  refreshPanelMessage
+  refreshPanelMessage,
+  probePanelState,
+  listMissingEnv,
+  nextResetUnix
 };
