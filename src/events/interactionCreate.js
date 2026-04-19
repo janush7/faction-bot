@@ -15,13 +15,23 @@ const { handleFactionSelection }                         = require('../handlers/
 const {
   handleLineupEditCapButton,
   handleLineupCaptionSubmit,
+  handleLineupCaptionApplyButton,
+  handleLineupCaptionCancelButton,
   handleLineupEditServerButton,
   handleServerModalSubmit,
+  handleServerApplyButton,
+  handleServerCancelButton,
   handleAdminPostServer,
   handleAdminEditCaption,
   handleAdminEditServer
 } = require('../handlers/interactions/lineupHandler');
-const { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes } = require('../handlers/interactions/nodesHandler');
+const {
+  handleNodesModalSubmit,
+  handleNodesApplyButton,
+  handleNodesCancelButton,
+  handleAdminPostNodes,
+  handleAdminEditNodes,
+} = require('../handlers/interactions/nodesHandler');
 const {
   handleRotationModalSubmit,
   handleRotationApplyButton,
@@ -39,7 +49,8 @@ const {
   handleAdminClearLogsConfirm,
   handleAdminClearLogsCancel,
   handleAdminClearLogs,
-  handleAdminHealthcheck
+  handleAdminHealthcheck,
+  handleAdminHealthcheckAutofix,
 } = require('../handlers/interactions/adminHandler');
 const { refreshPanelMessage } = require('../commands/admin/panel');
 
@@ -57,7 +68,12 @@ async function trackAction(interaction, label, fn) {
   // cooldown-blocked, preview expired). Skip the audit-log entry so the
   // footer doesn't show a phantom "last action" for work that never happened.
   if (result === false) return;
-  saveLastAction(label, interaction.user.id, interaction.user.tag);
+  // Handlers may also return `{ server }` to tag the action with the
+  // specific server (S1/S2) so the panel footer shows "Edit Lineup — S1".
+  const suffix = result && typeof result === 'object' && result.server
+    ? ` — ${result.server}`
+    : '';
+  saveLastAction(`${label}${suffix}`, interaction.user.id, interaction.user.tag);
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -87,30 +103,17 @@ module.exports = {
     // ── Modal Submits ───────────────────────────────────────────────────────
     if (interaction.isModalSubmit()) {
       try {
+        // Modal submits now show a preview + Apply/Cancel. lastAction is
+        // written when the admin clicks Apply (in the button handlers below),
+        // so we don't wrap these in trackAction.
         if (interaction.customId.startsWith('lineup_caption:')) {
-          // customId: lineup_caption:CHANNEL_ID:MESSAGE_ID[:SERVER]
-          const server = interaction.customId.split(':')[3] || null;
-          return await trackAction(
-            interaction,
-            server ? `Edit Lineup — ${server}` : 'Edit Lineup',
-            () => handleLineupCaptionSubmit(interaction),
-          );
+          return await handleLineupCaptionSubmit(interaction);
         }
         if (interaction.customId.startsWith('lineup_server:')) {
-          // customId: lineup_server:CHANNEL_ID:MESSAGE_ID[:SERVER]
-          const server = interaction.customId.split(':')[3] || null;
-          return await trackAction(
-            interaction,
-            server ? `Edit Server Details — ${server}` : 'Edit Server Details',
-            () => handleServerModalSubmit(interaction),
-          );
+          return await handleServerModalSubmit(interaction);
         }
         if (interaction.customId === 'nodes_edit') {
-          return await trackAction(
-            interaction,
-            'Edit Nodes',
-            () => handleNodesModalSubmit(interaction),
-          );
+          return await handleNodesModalSubmit(interaction);
         }
         if (interaction.customId.startsWith('rotation_edit:')) {
           // Modal submit now shows a preview instead of saving directly;
@@ -272,9 +275,10 @@ module.exports = {
           );
         }
         if (customId === 'admin_clearlogs_cancel')   return await handleAdminClearLogsCancel(interaction);
+        if (customId === 'admin_healthcheck_autofix') return await handleAdminHealthcheckAutofix(interaction);
       }
 
-      // ── Rotation preview Apply / Cancel (own namespace) ───────────────────
+      // ── Preview Apply / Cancel (per-flow namespace) ───────────────────────
       if (customId.startsWith('rotation_apply:')) {
         return await trackAction(
           interaction,
@@ -284,6 +288,36 @@ module.exports = {
       }
       if (customId.startsWith('rotation_cancel:')) {
         return await handleRotationCancelButton(interaction);
+      }
+      if (customId.startsWith('nodes_apply:')) {
+        return await trackAction(
+          interaction,
+          'Edit Nodes',
+          () => handleNodesApplyButton(interaction),
+        );
+      }
+      if (customId.startsWith('nodes_cancel:')) {
+        return await handleNodesCancelButton(interaction);
+      }
+      if (customId.startsWith('lineup_caption_apply:')) {
+        return await trackAction(
+          interaction,
+          'Edit Lineup',
+          () => handleLineupCaptionApplyButton(interaction),
+        );
+      }
+      if (customId.startsWith('lineup_caption_cancel:')) {
+        return await handleLineupCaptionCancelButton(interaction);
+      }
+      if (customId.startsWith('lineup_server_apply:')) {
+        return await trackAction(
+          interaction,
+          'Edit Server Details',
+          () => handleServerApplyButton(interaction),
+        );
+      }
+      if (customId.startsWith('lineup_server_cancel:')) {
+        return await handleServerCancelButton(interaction);
       }
 
     } catch (error) {

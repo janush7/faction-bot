@@ -147,6 +147,8 @@ async function runHealthcheck(client, guildId) {
       passed++;
     } else {
       issues.push({
+        kind: 'env',
+        key,
         label: `env: ${key}`,
         detail: 'missing or empty',
         hint: `set ${key} in .env and restart the bot`,
@@ -174,10 +176,15 @@ async function runHealthcheck(client, guildId) {
       passed++;
     } else {
       const where = channelId ? ` <#${channelId}>` : '';
+      const missingPerms = result.reason.startsWith('missing perms');
       issues.push({
+        kind: missingPerms ? 'channel-perms' : 'channel-invalid',
+        channelId,
+        channelLabel: cfg.label,
+        envVar: cfg.envVar,
         label: `channel: ${cfg.label}${where}`,
         detail: result.reason,
-        hint: result.reason.startsWith('missing perms')
+        hint: missingPerms
           ? 'grant the missing permissions to the bot on this channel'
           : 'verify the channel ID and that the bot is in the server',
       });
@@ -191,6 +198,7 @@ async function runHealthcheck(client, guildId) {
   total++;
   if (!guild) {
     issues.push({
+      kind: 'guild',
       label: 'guild',
       detail: 'guild unreachable',
       hint: 'check GUILD_ID and that the bot is still in the server',
@@ -199,12 +207,14 @@ async function runHealthcheck(client, guildId) {
     const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
     if (!me) {
       issues.push({
+        kind: 'bot-member',
         label: 'guild: bot member',
         detail: 'could not fetch bot member',
         hint: 're-invite the bot with the `bot` + `applications.commands` scopes',
       });
     } else if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       issues.push({
+        kind: 'manage-roles',
         label: 'guild: Manage Roles',
         detail: 'bot lacks Manage Roles permission',
         hint: 'grant Manage Roles in the server role settings — Reset Roles and faction swaps will fail without it',
@@ -222,6 +232,8 @@ async function runHealthcheck(client, guildId) {
     const prettyLabel = `role: ${faction.label}`;
     if (!rid) {
       issues.push({
+        kind: 'env',
+        key: faction.envVar,
         label: prettyLabel,
         detail: `${faction.envVar} not set`,
         hint: `set ${faction.envVar} to the Discord role ID in .env and restart`,
@@ -229,12 +241,15 @@ async function runHealthcheck(client, guildId) {
       continue;
     }
     if (!guild) {
-      issues.push({ label: prettyLabel, detail: 'guild unreachable', hint: 'see guild issue above' });
+      issues.push({ kind: 'guild', label: prettyLabel, detail: 'guild unreachable', hint: 'see guild issue above' });
       continue;
     }
     const role = await guild.roles.fetch(rid).catch(() => null);
     if (!role) {
       issues.push({
+        kind: 'role-missing',
+        envVar: faction.envVar,
+        roleId: rid,
         label: prettyLabel,
         detail: 'role not found',
         hint: `create the role and update ${faction.envVar} in .env (current: ${rid})`,
@@ -243,6 +258,9 @@ async function runHealthcheck(client, guildId) {
     }
     if (botHighest && botHighest.comparePositionTo(role) <= 0) {
       issues.push({
+        kind: 'role-hierarchy',
+        roleName: role.name,
+        botRoleName: botHighest.name,
         label: prettyLabel,
         detail: `bot role (${botHighest.name}) is not above ${role.name}`,
         hint: 'move the bot role higher in the server role list — Discord rejects role add/remove when the bot sits at or below the target role',
