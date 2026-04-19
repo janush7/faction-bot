@@ -52,8 +52,14 @@ async function gracefulShutdown(signal) {
       sendLog(client, embed),
       new Promise(resolve => setTimeout(resolve, 2000)),
     ]);
-  } catch (_) { /* best-effort */ }
-  try { client.destroy(); } catch (_) { /* ignore */ }
+  } catch (err) {
+    logger.debug(`shutdown notify failed: ${err.message}`);
+  }
+  try {
+    client.destroy();
+  } catch (err) {
+    logger.debug(`client.destroy failed: ${err.message}`);
+  }
   process.exit(0);
 }
 

@@ -90,10 +90,12 @@ function guildAllowed(guildId) {
 async function rejectUnlistedGuild(interaction) {
   const reply = { content: '⛔ This bot is not available on this server.', flags: 64 };
   try {
-    if (interaction.isRepliable && interaction.isRepliable()) {
+    if (interaction.isRepliable?.()) {
       await interaction.reply(reply);
     }
-  } catch (_) { /* best-effort */ }
+  } catch (err) {
+    logger.debug(`rejectUnlistedGuild: ${err.message}`);
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────

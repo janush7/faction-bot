@@ -39,7 +39,7 @@ const pendingQueue = [];
 let activeSlots = 0;
 
 function maxConcurrency() {
-  const raw = parseInt(process.env.FACTION_SWAP_CONCURRENCY ?? '5', 10);
+  const raw = Number.parseInt(process.env.FACTION_SWAP_CONCURRENCY ?? '5', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 5;
 }
 

@@ -139,7 +139,7 @@ function channelSuffix(guildId, channelId) {
 function firstChannel(envKey) {
   const raw = process.env[envKey];
   if (!raw) return null;
-  return String(raw).split(',').map(s => s.trim()).filter(Boolean)[0] ?? null;
+  return String(raw).split(',').map(s => s.trim()).find(Boolean) ?? null;
 }
 
 // ── Status probes ────────────────────────────────────────────────────────────

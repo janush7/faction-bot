@@ -44,11 +44,10 @@ function redactSecrets(text) {
 
 function safe(message) {
   if (typeof message === 'string') return redactSecrets(message);
-  try {
-    return redactSecrets(String(message));
-  } catch (_) {
-    return message;
-  }
+  // Non-strings: coerce via String(). Primitives and standard objects are
+  // always safe; a pathological toString() would propagate to the caller,
+  // the same as if console.log were called on the value directly.
+  return redactSecrets(String(message));
 }
 
 class Logger {
