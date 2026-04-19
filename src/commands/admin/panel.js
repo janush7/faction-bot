@@ -2,8 +2,6 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   EmbedBuilder
@@ -15,6 +13,7 @@ const pkg = require('../../../package.json');
 
 const OK = '🟢';
 const NO = '🔴';
+const PARTIAL = '🟡';
 const BOT_STARTED_AT_MS = Date.now();
 
 function humanizeAgo(ms) {
@@ -26,10 +25,10 @@ function humanizeAgo(ms) {
 }
 
 // ── Status probes ────────────────────────────────────────────────────────────
-// Each probe actually verifies the current state against Discord instead of
-// trusting local cache (cache may point at a message that was manually
-// deleted). Probes return booleans / small summaries. All probes catch
-// their own errors and fall back to "not posted" so the panel never throws.
+// Each probe verifies the current state against Discord instead of trusting
+// local cache (cache may point at a message that was manually deleted).
+// Probes catch their own errors and degrade to "not posted" so the panel
+// never throws.
 
 async function messageExists(client, channelId, messageId) {
   if (!channelId || !messageId) return false;
@@ -123,8 +122,130 @@ function rotationRow(posted) {
 
 function nodesRow({ posted, total }) {
   if (!total) return `📍 **Nodes**   ${NO}`;
-  const icon = posted === 0 ? NO : posted === total ? OK : '🟡';
+  const icon = posted === 0 ? NO : posted === total ? OK : PARTIAL;
   return `📍 **Nodes**   ${icon}   _(${posted}/${total} channel${total === 1 ? '' : 's'})_`;
+}
+
+// ── Menus ────────────────────────────────────────────────────────────────────
+
+function factionMenu() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('admin_faction_select')
+      .setPlaceholder('🛡️  Faction Embed — choose action')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setValue('reload')
+          .setLabel('Reload Faction Embed')
+          .setDescription('Delete the current embed and post a fresh one.')
+          .setEmoji('🔄'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('reset')
+          .setLabel('Reset Roles')
+          .setDescription('Remove Allies / Axis roles from every member.')
+          .setEmoji('♻️')
+      )
+  );
+}
+
+function lineupMenu() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('admin_lineup_select')
+      .setPlaceholder('📋  Lineup — choose action')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setValue('edit:S1')
+          .setLabel('Edit Lineup — S1')
+          .setDescription('Edit the Server 1 lineup caption.')
+          .setEmoji('✏️'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('edit:S2')
+          .setLabel('Edit Lineup — S2')
+          .setDescription('Edit the Server 2 lineup caption.')
+          .setEmoji('✏️')
+      )
+  );
+}
+
+function serverMenu() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('admin_server_select')
+      .setPlaceholder('🖥️  Server Details — choose action')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setValue('post:S1')
+          .setLabel('Post Server Details — S1')
+          .setDescription('Publish the Server 1 details embed.')
+          .setEmoji('📤'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('post:S2')
+          .setLabel('Post Server Details — S2')
+          .setDescription('Publish the Server 2 details embed.')
+          .setEmoji('📤'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('edit:S1')
+          .setLabel('Edit Server Details — S1')
+          .setDescription('Edit the Server 1 details embed.')
+          .setEmoji('✏️'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('edit:S2')
+          .setLabel('Edit Server Details — S2')
+          .setDescription('Edit the Server 2 details embed.')
+          .setEmoji('✏️')
+      )
+  );
+}
+
+function rotNodesMenu() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('admin_rotnodes_select')
+      .setPlaceholder('🗺️ 📍  Map Rotation & Nodes — choose action')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setValue('rotation:post')
+          .setLabel('Post Map Rotation')
+          .setDescription('Publish a fresh map rotation embed.')
+          .setEmoji('📤'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('rotation:edit')
+          .setLabel('Edit Map Rotation')
+          .setDescription('Edit the current rotation events.')
+          .setEmoji('✏️'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('nodes:post')
+          .setLabel('Post Nodes')
+          .setDescription('Publish the NODES embed to every configured channel.')
+          .setEmoji('📤'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('nodes:edit')
+          .setLabel('Edit Nodes')
+          .setDescription('Edit the current NODES embed fields.')
+          .setEmoji('✏️')
+      )
+  );
+}
+
+function panelMenu() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('admin_panel_select')
+      .setPlaceholder('🛠️  Panel — choose action')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setValue('refresh')
+          .setLabel('Refresh Status')
+          .setDescription('Re-check posted state of every embed.')
+          .setEmoji('🔄'),
+        new StringSelectMenuOptionBuilder()
+          .setValue('clearlogs')
+          .setLabel('Clear Log Channel')
+          .setDescription('Delete every message in the admin log channel.')
+          .setEmoji('🧹')
+      )
+  );
 }
 
 // ── Payload builder ──────────────────────────────────────────────────────────
@@ -147,7 +268,7 @@ async function buildPanelPayload(client) {
     rotationRow(rot),
     nodesRow(nodes),
     '',
-    `_${OK} posted  •  🟡 partial  •  ${NO} not posted_`
+    `_${OK} posted  •  ${PARTIAL} partial  •  ${NO} not posted_`
   ].join('\n');
 
   const embed = new EmbedBuilder()
@@ -158,94 +279,10 @@ async function buildPanelPayload(client) {
       text: `v${pkg.version}  •  deployed ${humanizeAgo(Date.now() - BOT_STARTED_AT_MS)}`
     });
 
-  // Row 1 — Faction controls + Lineup edit shortcuts
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('admin_reload')
-      .setLabel('Reload Faction Embed')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🔄'),
-    new ButtonBuilder()
-      .setCustomId('admin_reset')
-      .setLabel('Reset Roles')
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji('♻️'),
-    new ButtonBuilder()
-      .setCustomId('admin_edit_caption:S1')
-      .setLabel('Edit Lineup — S1')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✏️'),
-    new ButtonBuilder()
-      .setCustomId('admin_edit_caption:S2')
-      .setLabel('Edit Lineup — S2')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✏️')
-  );
-
-  // Row 2 — Server Details select menu
-  const row2 = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('admin_server_select')
-      .setPlaceholder('🖥️  Server Details — choose action')
-      .addOptions(
-        new StringSelectMenuOptionBuilder()
-          .setValue('post:S1')
-          .setLabel('Post Server Details — S1')
-          .setEmoji('📤'),
-        new StringSelectMenuOptionBuilder()
-          .setValue('post:S2')
-          .setLabel('Post Server Details — S2')
-          .setEmoji('📤'),
-        new StringSelectMenuOptionBuilder()
-          .setValue('edit:S1')
-          .setLabel('Edit Server Details — S1')
-          .setEmoji('✏️'),
-        new StringSelectMenuOptionBuilder()
-          .setValue('edit:S2')
-          .setLabel('Edit Server Details — S2')
-          .setEmoji('✏️')
-      )
-  );
-
-  // Row 3 — Nodes + Rotation
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('admin_post_nodes')
-      .setLabel('Post Nodes')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('📤'),
-    new ButtonBuilder()
-      .setCustomId('admin_edit_nodes')
-      .setLabel('Edit Nodes')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✏️'),
-    new ButtonBuilder()
-      .setCustomId('admin_post_rotation')
-      .setLabel('Post Rotation')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('📤'),
-    new ButtonBuilder()
-      .setCustomId('admin_edit_rotation')
-      .setLabel('Edit Rotation')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✏️')
-  );
-
-  // Row 4 — Logs + Refresh
-  const row4 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('admin_clearlogs')
-      .setLabel('Clear Log Channel')
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji('🧹'),
-    new ButtonBuilder()
-      .setCustomId('admin_refresh')
-      .setLabel('Refresh')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('🔄')
-  );
-
-  return { embeds: [embed], components: [row1, row2, row3, row4] };
+  return {
+    embeds: [embed],
+    components: [factionMenu(), lineupMenu(), serverMenu(), rotNodesMenu(), panelMenu()]
+  };
 }
 
 module.exports = {
