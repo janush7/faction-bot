@@ -27,26 +27,25 @@ async function handleLineupEditCapButton(interaction) {
   const parts     = interaction.customId.split(':');
   const channelId = parts[1];
   const buttonMessageId = parts[2];
+  const server    = parts[3] || null; // S1 | S2 | null (legacy)
 
-  // The button's message ID may be stale after a delete+repost caption edit.
-  // Prefer the cached ID (always points to the current lineup message).
-  const cached = loadLineupData(channelId);
+  const cached = loadLineupData(channelId, server);
   const messageId = cached?.messageId ?? buttonMessageId;
-  let currentCaption = cached?.caption ?? 'Midweek Frontline – Lineup – ';
+  let currentCaption = cached?.caption ?? 'Midweek Frontline \u2013 Lineup \u2013 ';
 
-  // If no cache or different message, try fetching (low risk — single API call)
   if (!cached || cached.messageId !== messageId) {
     try {
       const ch  = await interaction.client.channels.fetch(channelId);
       const msg = await ch.messages.fetch(messageId);
       currentCaption = msg.embeds[0]?.footer?.text ?? currentCaption;
-      saveLineupData(channelId, messageId, currentCaption);
+      saveLineupData(channelId, messageId, currentCaption, server);
     } catch (_) {}
   }
 
+  const serverSuffix = server ? `:${server}` : '';
   const modal = new ModalBuilder()
-    .setCustomId(`lineup_caption:${channelId}:${messageId}`)
-    .setTitle('Edit Caption');
+    .setCustomId(`lineup_caption:${channelId}:${messageId}${serverSuffix}`)
+    .setTitle(server ? `Edit Caption (${server})` : 'Edit Caption');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
@@ -67,13 +66,13 @@ async function handleLineupCaptionSubmit(interaction) {
   const parts      = interaction.customId.split(':');
   const channelId  = parts[1];
   const modalMessageId = parts[2];
+  const server     = parts[3] || null; // S1 | S2 | null (legacy)
   const newCaption = interaction.fields.getTextInputValue('caption_text');
 
   try {
     const ch = await interaction.client.channels.fetch(channelId);
 
-    // Prefer cached message ID in case the modal was opened with a stale one.
-    const cached = loadLineupData(channelId);
+    const cached = loadLineupData(channelId, server);
     const messageId = cached?.messageId ?? modalMessageId;
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
@@ -81,14 +80,13 @@ async function handleLineupCaptionSubmit(interaction) {
     // Discord resolves `attachment://lineup.png` to a CDN URL when the
     // embed is fetched via API, and reports attachments=0 (the file is
     // "claimed" internally). Editing the embed with the CDN URL causes
-    // Discord to decouple the image from the embed — it renders as a
-    // standalone preview above the embed.
+    // Discord to decouple the image from the embed.
     //
     // Fix: download the image from the CDN URL, re-upload it as a fresh
     // file via `files`, and set the embed's image back to
     // `attachment://lineup.png`. This re-establishes the claim.
     const imageUrl = old.image?.url;
-    logger.info(`Editing lineup ${messageId}: image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
+    logger.info(`Editing lineup ${messageId} (${server || 'legacy'}): image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
 
     const updated = EmbedBuilder.from(old);
     updated.setFooter({ text: newCaption });
@@ -108,13 +106,13 @@ async function handleLineupCaptionSubmit(interaction) {
       await oldMsg.edit({ embeds: [updated] });
     }
 
-    saveLineupData(channelId, messageId, newCaption);
+    saveLineupData(channelId, messageId, newCaption, server);
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
-    await interaction.reply({ content: `✅ Caption updated to: **${newCaption}**`, flags: 64 });
+    await interaction.reply({ content: `\u2705 Caption updated to: **${newCaption}**`, flags: 64 });
   } catch (err) {
     logger.error('Failed to edit lineup caption:', err);
-    await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
+    await interaction.reply({ content: '\u274c Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
   }
 }
 
@@ -188,8 +186,8 @@ async function handleServerModalSubmit(interaction) {
       .setColor(0x011327)
       .setThumbnail(THUMBNAIL_URL)
       .addFields(
-        { name: '📌 Server Name', value: newName, inline: true },
-        { name: '🔒 Password',    value: newPass, inline: true }
+        { name: '\ud83d\udccc Server Name', value: newName, inline: true },
+        { name: '\ud83d\udd12 Password',    value: newPass, inline: true }
       );
 
     await msg.edit({ embeds: [updated] });
@@ -199,12 +197,12 @@ async function handleServerModalSubmit(interaction) {
 
     logger.info(`${interaction.user.tag} updated server details: ${newName} / ${newPass}`);
     await interaction.reply({
-      content: `✅ Server details updated!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
+      content: `\u2705 Server details updated!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
       flags: 64
     });
   } catch (err) {
     logger.error('Failed to edit server details:', err);
-    await interaction.reply({ content: '❌ Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
+    await interaction.reply({ content: '\u274c Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
   }
 }
 
@@ -232,8 +230,8 @@ async function handleAdminPostServer(interaction) {
     .setColor(0x011327)
     .setThumbnail(THUMBNAIL_URL)
     .addFields(
-      { name: '📌 Server Name', value: serverName,     inline: true },
-      { name: '🔒 Password',    value: serverPassword, inline: true }
+      { name: '\ud83d\udccc Server Name', value: serverName,     inline: true },
+      { name: '\ud83d\udd12 Password',    value: serverPassword, inline: true }
     );
 
   const serverMsg = await channel.send({ embeds: [serverEmbed] });
@@ -245,10 +243,10 @@ async function handleAdminPostServer(interaction) {
 
   await sendLog(interaction.client, new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('🖥️ Server Details Posted')
+    .setTitle('\ud83d\udda5\ufe0f Server Details Posted')
     .addFields(
-      { name: '👤 Admin',   value: `<@${interaction.user.id}>`, inline: true },
-      { name: '📌 Channel', value: `<#${channel.id}>`,          inline: true }
+      { name: '\ud83d\udc64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
+      { name: '\ud83d\udccc Channel', value: `<#${channel.id}>`,          inline: true }
     )
     .setTimestamp()
   );
@@ -257,7 +255,7 @@ async function handleAdminPostServer(interaction) {
     .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}`)
     .setLabel('Edit Server Details')
     .setStyle(ButtonStyle.Secondary)
-    .setEmoji('✏️');
+    .setEmoji('\u270f\ufe0f');
 
   return interaction.editReply({
     embeds: [createSuccessEmbed('Server Details Posted', `Posted to <#${channel.id}>!`)],
@@ -266,17 +264,18 @@ async function handleAdminPostServer(interaction) {
 }
 
 // ── Admin: Edit Lineup Caption (panel button) ─────────────────────────────────
-// Uses cache to avoid channel scan before showModal() (3-second timeout).
+// Accepts server tag from button customId: admin_edit_caption:S1 or admin_edit_caption:S2
 
 async function handleAdminEditCaption(interaction) {
+  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.LINEUP_CHANNEL || interaction.channelId;
 
-  // Try cache first — instant, no API calls before showModal()
-  const cached = loadLineupData(channelId);
+  const cached = loadLineupData(channelId, server);
   if (cached) {
+    const serverSuffix = server ? `:${server}` : '';
     const modal = new ModalBuilder()
-      .setCustomId(`lineup_caption:${channelId}:${cached.messageId}`)
-      .setTitle('Edit Lineup Caption');
+      .setCustomId(`lineup_caption:${channelId}:${cached.messageId}${serverSuffix}`)
+      .setTitle(server ? `Edit Lineup Caption (${server})` : 'Edit Lineup Caption');
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -293,7 +292,7 @@ async function handleAdminEditCaption(interaction) {
     return interaction.showModal(modal);
   }
 
-  // No cache — scan channel, save for next click, tell user to retry
+  // No cache \u2014 scan channel for the most recent lineup with an image
   await interaction.deferReply({ flags: 64 });
 
   const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
@@ -306,15 +305,15 @@ async function handleAdminEditCaption(interaction) {
   const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.image));
   if (!msg) {
     return interaction.editReply({
-      content: '❌ No lineup message found in the lineup channel. Post one with `/lineup` first.'
+      content: `\u274c No lineup message found${server ? ` for ${server}` : ''}. Post one with \`/lineup\` first.`
     });
   }
 
-  const caption = msg.embeds[0]?.footer?.text ?? 'Midweek Frontline – Lineup – ';
-  saveLineupData(channelId, msg.id, caption);
+  const caption = msg.embeds[0]?.footer?.text ?? 'Midweek Frontline \u2013 Lineup \u2013 ';
+  saveLineupData(channelId, msg.id, caption, server);
 
   await interaction.editReply({
-    content: '✅ Lineup data loaded. **Click "Edit Caption" again** to open the editor.'
+    content: `\u2705 Lineup data loaded${server ? ` for ${server}` : ''}. **Click the button again** to open the editor.`
   });
 }
 
@@ -324,7 +323,7 @@ async function handleAdminEditCaption(interaction) {
 async function handleAdminEditServer(interaction) {
   const channelId = process.env.SERVER_DETAILS_CHANNEL || interaction.channelId;
 
-  // Try cache first — instant, no API calls before showModal()
+  // Try cache first \u2014 instant, no API calls before showModal()
   const cached = loadServerData(channelId);
   if (cached) {
     const modal = new ModalBuilder()
@@ -355,7 +354,7 @@ async function handleAdminEditServer(interaction) {
     return interaction.showModal(modal);
   }
 
-  // No cache — scan channel, save for next click, tell user to retry
+  // No cache \u2014 scan channel, save for next click, tell user to retry
   await interaction.deferReply({ flags: 64 });
 
   const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
@@ -368,7 +367,7 @@ async function handleAdminEditServer(interaction) {
   const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === 'Server Details'));
   if (!msg) {
     return interaction.editReply({
-      content: '❌ No Server Details message found. Post one first using **Post Server Details**.'
+      content: '\u274c No Server Details message found. Post one first using **Post Server Details**.'
     });
   }
 
@@ -378,7 +377,7 @@ async function handleAdminEditServer(interaction) {
   saveServerData(channelId, msg.id, serverName, serverPass);
 
   await interaction.editReply({
-    content: '✅ Server data loaded. **Click "Edit Server Details" again** to open the editor.'
+    content: '\u2705 Server data loaded. **Click "Edit Server Details" again** to open the editor.'
   });
 }
 

@@ -50,6 +50,16 @@ module.exports = {
     .setName('lineup')
     .setDescription('Post the lineup to the channel')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption(option =>
+      option
+        .setName('server')
+        .setDescription('Which server (S1 or S2)')
+        .setRequired(true)
+        .addChoices(
+          { name: 'S1', value: 'S1' },
+          { name: 'S2', value: 'S2' }
+        )
+    )
     .addAttachmentOption(option =>
       option
         .setName('image')
@@ -69,6 +79,7 @@ module.exports = {
 
     await interaction.deferReply({ flags: 64 });
 
+    const server     = interaction.options.getString('server');
     const attachment = interaction.options.getAttachment('image');
 
     if (!attachment.contentType?.startsWith('image/')) {
@@ -85,7 +96,7 @@ module.exports = {
     }
 
     const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
-    const defaultCaption = `Midweek Frontline – Lineup – ${dateLabel}`;
+    const defaultCaption = `Midweek Frontline – ${server} – Lineup – ${dateLabel}`;
 
     const lineupEmbed = new EmbedBuilder()
       .addFields(
@@ -103,7 +114,7 @@ module.exports = {
     });
 
     // Save to cache — so admin "Edit Caption" works instantly without channel scan
-    saveLineupData(channel.id, posted.id, defaultCaption);
+    saveLineupData(channel.id, posted.id, defaultCaption, server);
 
     const logChannel = process.env.ADMIN_LOG_CHANNEL
       ? interaction.client.channels.cache.get(process.env.ADMIN_LOG_CHANNEL)
@@ -118,11 +129,11 @@ module.exports = {
       logChannel.send({ embeds: [logEmbed] }).catch(() => {});
     }
 
-    logger.info(`Lineup sent to #${channel.name} by ${interaction.user.tag}`);
+    logger.info(`Lineup ${server} sent to #${channel.name} by ${interaction.user.tag}`);
 
     const editCaptionBtn = new ButtonBuilder()
-      .setCustomId(`lineup_editcap:${channel.id}:${posted.id}`)
-      .setLabel('✏️ Edit Caption')
+      .setCustomId(`lineup_editcap:${channel.id}:${posted.id}:${server}`)
+      .setLabel(`✏️ Edit Caption (${server})`)
       .setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(editCaptionBtn);

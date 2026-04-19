@@ -29,15 +29,22 @@ function _write(filePath, data) {
 }
 
 // ── Lineup caption cache ─────────────────────────────────────────────────────
+// `server` is optional ('S1' | 'S2'). When provided, data is keyed as
+// `${channelId}:${server}` so each server's lineup is cached independently.
+// Falls back to plain `channelId` for backward compat with old data.
 
-function saveLineupData(channelId, messageId, caption) {
+function _lineupKey(channelId, server) {
+  return server ? `${channelId}:${server}` : channelId;
+}
+
+function saveLineupData(channelId, messageId, caption, server) {
   const store = _read(LINEUP_PATH);
-  store[channelId] = { messageId, caption };
+  store[_lineupKey(channelId, server)] = { messageId, caption, server: server || null };
   _write(LINEUP_PATH, store);
 }
 
-function loadLineupData(channelId) {
-  return _read(LINEUP_PATH)[channelId] ?? null;
+function loadLineupData(channelId, server) {
+  return _read(LINEUP_PATH)[_lineupKey(channelId, server)] ?? null;
 }
 
 // ── Server details cache ──────────────────────────────────────────────────────
