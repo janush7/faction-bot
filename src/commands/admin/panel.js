@@ -405,9 +405,7 @@ async function buildPanelPayload(client, guildId) {
     nodesRow(nodes, guildId)
   ];
   if (nextReset) {
-    const label = nextResetLabel();
-    const suffix = label ? `   _(${label})_` : '';
-    rows.push(`⏰ **Auto-Reset**   <t:${nextReset}:R>${suffix}`);
+    rows.push(`⏰ **Auto-Reset**   <t:${nextReset}:R>`);
   }
   if (missingEnv.length) {
     rows.push(`⚠️ **Env**   ${missingEnv.length} missing: \`${missingEnv.slice(0, 6).join('`, `')}\`${missingEnv.length > 6 ? '…' : ''}`);
