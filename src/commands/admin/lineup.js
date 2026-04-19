@@ -96,16 +96,16 @@ module.exports = {
     }
 
     const { matchUnix, slUnix, startUnix, dateLabel } = getNextWednesdayTimestamps();
-    const defaultCaption = `Midweek Frontline – ${server} – Lineup – ${dateLabel}`;
+    const defaultCaption = `Midweek Frontline – **${server}** – Lineup – **${dateLabel}**`;
 
     const lineupEmbed = new EmbedBuilder()
+      .setDescription(defaultCaption)
       .addFields(
         { name: 'Match Positions', value: `<t:${matchUnix}:t>`, inline: true },
         { name: 'SL Briefing',     value: `<t:${slUnix}:t>`,    inline: true },
         { name: 'Game Start',      value: `<t:${startUnix}:t>`, inline: true },
       )
       .setImage('attachment://lineup.png')
-      .setFooter({ text: defaultCaption })
       .setColor(0x011327);
 
     const posted = await channel.send({
