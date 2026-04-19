@@ -13,6 +13,27 @@ const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('..
 const { createFactionButtons } = require('../../utils/buttons');
 const { sendLog, bulkDeleteFiltered, batchRoleRemove } = require('./shared');
 const { getAllFactionRoleIds } = require('../../config/factions');
+const { runHealthcheck } = require('../../utils/healthcheck');
+const { remainingCooldown, markAdminAction } = require('../../utils/adminCooldown');
+
+/**
+ * Enforces a short per-user cooldown on destructive admin actions so an
+ * accidental double-click on Confirm cannot trigger the work twice. Returns
+ * `true` if the action may proceed (and records the timestamp), or replies
+ * ephemerally and returns `false` when the user is still cooling down.
+ */
+async function _enforceAdminCooldown(interaction, action) {
+  const remaining = remainingCooldown(interaction.user.id, action);
+  if (remaining > 0) {
+    await interaction.reply({
+      embeds: [createErrorEmbed('Slow down', `Please wait **${remaining}s** before repeating *${action}*.`)],
+      flags: 64,
+    });
+    return false;
+  }
+  markAdminAction(interaction.user.id, action);
+  return true;
+}
 
 // ── Admin: Reset Confirmation ─────────────────────────────────────────────────
 
@@ -47,6 +68,8 @@ async function handleAdminResetCancel(interaction) {
  * Removes faction roles from all members in batches to respect Discord rate limits.
  */
 async function handleAdminReset(interaction) {
+  if (!(await _enforceAdminCooldown(interaction, 'Reset Roles'))) return;
+
   await interaction.update({
     embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Resetting faction roles...')],
     components: []
@@ -176,6 +199,8 @@ async function handleAdminClearLogsCancel(interaction) {
 }
 
 async function handleAdminClearLogs(interaction) {
+  if (!(await _enforceAdminCooldown(interaction, 'Clear Log Channel'))) return;
+
   await interaction.update({
     embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Clearing logs...')],
     components: []
@@ -199,6 +224,37 @@ async function handleAdminClearLogs(interaction) {
   });
 }
 
+// ── Admin: Healthcheck ────────────────────────────────────────────────────────
+
+async function handleAdminHealthcheck(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const guildId = process.env.GUILD_ID;
+  const { passed, total, issues } = await runHealthcheck(interaction.client, guildId);
+
+  const allGood = issues.length === 0;
+  const color   = allGood ? 0x2ecc71 : 0xe67e22;
+  const title   = allGood
+    ? `✅ Healthcheck — ${passed}/${total} checks passed`
+    : `⚠️ Healthcheck — ${passed}/${total} checks passed`;
+
+  const description = allGood
+    ? 'All systems nominal.'
+    : issues.slice(0, 20)
+        .map(i => `• **${i.label}** — ${i.detail}`)
+        .join('\n') + (issues.length > 20 ? `\n…and ${issues.length - 20} more.` : '');
+
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(description || '—')
+    .setTimestamp();
+
+  logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s)`);
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
 module.exports = {
   handleAdminResetConfirm,
   handleAdminResetCancel,
@@ -206,5 +262,6 @@ module.exports = {
   handleAdminReload,
   handleAdminClearLogsConfirm,
   handleAdminClearLogsCancel,
-  handleAdminClearLogs
+  handleAdminClearLogs,
+  handleAdminHealthcheck
 };
