@@ -62,9 +62,10 @@ function getWarsawOffsetHours(date) {
 function reverseParseEventLines(text) {
   if (!text) return '';
   return text.split('\n').map(line => {
-    const m = line.trim().match(/^<t:(\d+):F>\s*-\s*\*\*(.+?)\*\*\s*$/);
+    const m = line.trim().match(/^<t:(\d+):[a-zA-Z]>\s*-\s*\*\*\s*(.+?)\s*\*\*\s*$/);
     if (!m) return line;
-    const [, unixStr, mapName] = m;
+    const [, unixStr, rawMap] = m;
+    const mapName = rawMap.replace(/`/g, '').trim();
     const d = new Date(parseInt(unixStr, 10) * 1000);
     const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Europe/Warsaw',
