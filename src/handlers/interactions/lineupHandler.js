@@ -78,19 +78,36 @@ async function handleLineupCaptionSubmit(interaction) {
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
 
-    // Minimal edit: copy the entire embed as-is and ONLY change the footer.
-    // Previous attempts rebuilt the embed from scratch, which replaced the
-    // image reference (attachment://lineup.png) with a CDN URL. That broke
-    // the embed→attachment link and caused the image to render as a
-    // standalone preview above the embed. By preserving the original embed
-    // data (including the attachment:// image reference), Discord keeps the
-    // image inside the embed where it belongs.
+    // Discord resolves `attachment://lineup.png` to a CDN URL when the
+    // embed is fetched via API, and reports attachments=0 (the file is
+    // "claimed" internally). Editing the embed with the CDN URL causes
+    // Discord to decouple the image from the embed — it renders as a
+    // standalone preview above the embed.
+    //
+    // Fix: download the image from the CDN URL, re-upload it as a fresh
+    // file via `files`, and set the embed's image back to
+    // `attachment://lineup.png`. This re-establishes the claim.
+    const imageUrl = old.image?.url;
+    logger.info(`Editing lineup ${messageId}: image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
+
     const updated = EmbedBuilder.from(old);
     updated.setFooter({ text: newCaption });
 
-    logger.info(`Editing lineup ${messageId}: image=${old.image?.url}, attachments=${oldMsg.attachments.size}`);
+    if (imageUrl) {
+      const res = await fetch(imageUrl);
+      if (!res.ok) throw new Error(`Failed to download lineup image: ${res.status}`);
+      const buffer = Buffer.from(await res.arrayBuffer());
 
-    await oldMsg.edit({ embeds: [updated] });
+      updated.setImage('attachment://lineup.png');
+      await oldMsg.edit({
+        embeds:      [updated],
+        files:       [{ attachment: buffer, name: 'lineup.png' }],
+        attachments: []
+      });
+    } else {
+      await oldMsg.edit({ embeds: [updated] });
+    }
+
     saveLineupData(channelId, messageId, newCaption);
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
