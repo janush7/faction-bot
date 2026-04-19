@@ -143,10 +143,43 @@ async function handleAdminReload(interaction) {
   });
 }
 
-// ── Admin: Clear Logs ─────────────────────────────────────────────────────────
+// ── Admin: Clear Logs (confirmation flow) ─────────────────────────────────────
+
+async function handleAdminClearLogsConfirm(interaction) {
+  const logChannelId = process.env.ADMIN_LOG_CHANNEL;
+  const target       = logChannelId ? `<#${logChannelId}>` : 'the log channel';
+
+  const confirmEmbed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle('⚠️ Confirm Log Clear')
+    .setDescription(`This will delete **every bot message** in ${target}.\n\nAre you sure?`);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_clearlogs_confirm')
+      .setLabel('Confirm')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('admin_clearlogs_cancel')
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return interaction.reply({ embeds: [confirmEmbed], components: [row], flags: 64 });
+}
+
+async function handleAdminClearLogsCancel(interaction) {
+  return interaction.update({
+    embeds: [createErrorEmbed('Cancelled', 'Log clear was cancelled.')],
+    components: []
+  });
+}
 
 async function handleAdminClearLogs(interaction) {
-  await interaction.deferReply({ flags: 64 });
+  await interaction.update({
+    embeds: [new EmbedBuilder().setColor(0x011327).setDescription('⏳ Clearing logs...')],
+    components: []
+  });
 
   const logChannelId = process.env.ADMIN_LOG_CHANNEL;
   if (!logChannelId) {
@@ -171,5 +204,7 @@ module.exports = {
   handleAdminResetCancel,
   handleAdminReset,
   handleAdminReload,
+  handleAdminClearLogsConfirm,
+  handleAdminClearLogsCancel,
   handleAdminClearLogs
 };

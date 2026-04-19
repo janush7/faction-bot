@@ -31,8 +31,11 @@ const {
   handleAdminResetCancel,
   handleAdminReset,
   handleAdminReload,
+  handleAdminClearLogsConfirm,
+  handleAdminClearLogsCancel,
   handleAdminClearLogs
 } = require('../handlers/interactions/adminHandler');
+const { buildPanelPayload } = require('../commands/admin/panel');
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
@@ -127,11 +130,14 @@ module.exports = {
           });
         }
 
-        if (customId === 'admin_reset')           return await handleAdminResetConfirm(interaction);
-        if (customId === 'admin_reset_confirm')   return await handleAdminReset(interaction);
-        if (customId === 'admin_reset_cancel')    return await handleAdminResetCancel(interaction);
-        if (customId === 'admin_reload')          return await handleAdminReload(interaction);
-        if (customId === 'admin_clearlogs')       return await handleAdminClearLogs(interaction);
+        if (customId === 'admin_reset')              return await handleAdminResetConfirm(interaction);
+        if (customId === 'admin_reset_confirm')      return await handleAdminReset(interaction);
+        if (customId === 'admin_reset_cancel')       return await handleAdminResetCancel(interaction);
+        if (customId === 'admin_reload')             return await handleAdminReload(interaction);
+        if (customId === 'admin_clearlogs')          return await handleAdminClearLogsConfirm(interaction);
+        if (customId === 'admin_clearlogs_confirm')  return await handleAdminClearLogs(interaction);
+        if (customId === 'admin_clearlogs_cancel')   return await handleAdminClearLogsCancel(interaction);
+        if (customId === 'admin_refresh')            return await interaction.update(buildPanelPayload());
         if (customId.startsWith('admin_post_server')) return await handleAdminPostServer(interaction);
         if (customId.startsWith('admin_edit_caption')) return await handleAdminEditCaption(interaction);
         if (customId.startsWith('admin_edit_server')) return await handleAdminEditServer(interaction);
