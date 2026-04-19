@@ -80,6 +80,20 @@ function reverseParseEventLines(text) {
 }
 
 /**
+ * Normalizes rotation raw data so any legacy `<t:unix:F> - **Map**` tokens
+ * (saved by older versions) are converted back to the editable DD/MM/YYYY form.
+ */
+function normalizeRotationRaw(data) {
+  if (!data) return null;
+  return {
+    month1Header: data.month1Header,
+    month1Events: reverseParseEventLines(data.month1Events),
+    month2Header: data.month2Header,
+    month2Events: reverseParseEventLines(data.month2Events)
+  };
+}
+
+/**
  * Reads the currently-posted rotation embed and returns its content in the
  * DD/MM/YYYY editable format. Returns null if the message can't be fetched
  * or doesn't look like a rotation embed.
@@ -99,6 +113,16 @@ async function readRotationFromEmbed(client, channelId, messageId) {
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * Refreshes the raw cache in the background so the next Edit Rotation click
+ * sees the latest embed content. Fires-and-forgets — no await by caller.
+ */
+function refreshRotationRawInBackground(client, channelId, messageId) {
+  readRotationFromEmbed(client, channelId, messageId).then(data => {
+    if (data) saveRotationRaw(messageId, data);
+  }).catch(() => {});
 }
 
 /**
@@ -271,9 +295,9 @@ async function handleAdminEditRotation(interaction) {
         if (fields.length >= 2) {
           saveRotationRaw(found.id, {
             month1Header: fields[0].name,
-            month1Events: fields[0].value,
+            month1Events: reverseParseEventLines(fields[0].value),
             month2Header: fields[1].name,
-            month2Events: fields[1].value
+            month2Events: reverseParseEventLines(fields[1].value)
           });
         }
       }
@@ -288,8 +312,8 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  const liveData = await readRotationFromEmbed(interaction.client, channelId, storedMsgId);
-  const data     = liveData ?? loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
+  const data = normalizeRotationRaw(loadRotationRaw(storedMsgId)) ?? getDefaultRotationData();
+  refreshRotationRawInBackground(interaction.client, channelId, storedMsgId);
 
   const modal = new ModalBuilder()
     .setCustomId(`rotation_edit:${channelId}:${storedMsgId}`)
