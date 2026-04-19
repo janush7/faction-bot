@@ -2,7 +2,7 @@ const { Events } = require('discord.js');
 const path = require('path');
 const logger = require('../utils/logger');
 const emojiState = require('../utils/emojiState');
-const { startScheduler } = require('../utils/scheduler');
+const { startScheduler, startRotationScheduler } = require('../utils/scheduler');
 const { warmRotationCache } = require('../handlers/interactions/rotationHandler');
 
 module.exports = {
@@ -18,6 +18,7 @@ module.exports = {
     }
 
     startScheduler(client);
+    startRotationScheduler(client);
 
     warmRotationCache(client).catch(err =>
       logger.warn(`warmRotationCache failed: ${err.message}`)

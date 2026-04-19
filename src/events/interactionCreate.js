@@ -25,8 +25,10 @@ const { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes } = r
 const {
   handleRotationModalSubmit,
   handleAdminPostRotation,
-  handleAdminEditRotation
+  handleAdminEditRotation,
+  handleAdminAdvanceRotation
 } = require('../handlers/interactions/rotationHandler');
+const { handleAdminPostAllMissing } = require('../handlers/interactions/postAllHandler');
 const {
   handleAdminResetConfirm,
   handleAdminResetCancel,
@@ -180,6 +182,14 @@ module.exports = {
                 );
               }
               if (value === 'rotation:edit') return await handleAdminEditRotation(interaction);
+              if (value === 'rotation:advance') {
+                return await trackAction(
+                  interaction,
+                  'Advance Rotation',
+                  () => handleAdminAdvanceRotation(interaction),
+                  { refresh: false }
+                );
+              }
               if (value === 'nodes:post') {
                 return await trackAction(
                   interaction,
@@ -195,6 +205,14 @@ module.exports = {
               if (value === 'refresh') {
                 // Just ack the interaction; the finally below redraws the panel.
                 return await interaction.deferUpdate();
+              }
+              if (value === 'postall') {
+                return await trackAction(
+                  interaction,
+                  'Post All Missing',
+                  () => handleAdminPostAllMissing(interaction),
+                  { refresh: false }
+                );
               }
               // Clear logs only opens confirm — recorded when user confirms.
               if (value === 'clearlogs') return await handleAdminClearLogsConfirm(interaction);

@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const logger = require('./logger');
 const { getAllFactionRoleIds } = require('../config/factions');
+const { maybeAutoAdvanceRotation } = require('../handlers/interactions/rotationHandler');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -28,6 +29,32 @@ function startScheduler(client) {
   });
 
   logger.info(`Scheduler started — auto-reset every ${dayName} at ${hour}:00 Warsaw time`);
+}
+
+/**
+ * Starts the daily rotation auto-advance check.
+ * Runs every day at 00:30 Europe/Warsaw. When month1 of the rotation embed
+ * is entirely in the past, the rolling window advances by one month.
+ */
+function startRotationScheduler(client) {
+  const expression = '30 0 * * *'; // 00:30 daily
+  if (!cron.validate(expression)) {
+    logger.error(`Invalid rotation cron expression: ${expression}. Rotation scheduler not started.`);
+    return;
+  }
+
+  cron.schedule(expression, async () => {
+    try {
+      const result = await maybeAutoAdvanceRotation(client);
+      if (result?.skipped) {
+        logger.info(`Rotation auto-advance skipped — ${result.skipped}`);
+      }
+    } catch (err) {
+      logger.error(`Rotation auto-advance failed: ${err.message}`);
+    }
+  }, { timezone: 'Europe/Warsaw' });
+
+  logger.info('Rotation scheduler started — daily check at 00:30 Warsaw time');
 }
 
 async function resetFactionRoles(client) {
@@ -105,4 +132,4 @@ async function resetFactionRoles(client) {
   }
 }
 
-module.exports = { startScheduler, resetFactionRoles };
+module.exports = { startScheduler, startRotationScheduler, resetFactionRoles };
