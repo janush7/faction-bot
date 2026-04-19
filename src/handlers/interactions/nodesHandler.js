@@ -7,9 +7,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  ActionRowBuilder
 } = require('discord.js');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
@@ -18,8 +16,9 @@ const { sendLog, findLastBotMessage } = require('./shared');
 const { saveNodesData, loadNodesData } = require('../../utils/nodesStore');
 const {
   storePendingEdit,
-  consumePendingEdit,
-  restorePendingEdit,
+  buildPreviewButtons,
+  beginApplyInteraction,
+  handleCancelInteraction,
 } = require('../../utils/pendingEdits');
 
 const PENDING_KIND = 'nodes';
@@ -114,43 +113,16 @@ async function handleNodesModalSubmit(interaction) {
     ownerId: interaction.user.id,
   });
 
-  const buttonsRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`nodes_apply:${nonce}`)
-      .setLabel('Apply')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('✅'),
-    new ButtonBuilder()
-      .setCustomId(`nodes_cancel:${nonce}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✖️')
-  );
-
   return interaction.editReply({
     content: '👀 **Preview** — check the node details below, then click **Apply** to publish or **Cancel** to discard.',
     embeds: [previewEmbed],
-    components: [buttonsRow],
+    components: [buildPreviewButtons(PENDING_KIND, nonce)],
   });
 }
 
 async function handleNodesApplyButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(PENDING_KIND, nonce);
-
-  if (!pending) {
-    await interaction.update({
-      content: '⏰ Preview expired or already used. Re-open **Edit Nodes** to try again.',
-      embeds: [],
-      components: [],
-    });
-    return false;
-  }
-  if (pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(PENDING_KIND, nonce, pending);
-    await interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
-    return false;
-  }
+  const pending = await beginApplyInteraction(interaction, PENDING_KIND, 'Edit Nodes');
+  if (!pending) return false;
 
   const { fields } = pending;
   const updatedEmbed = buildNodesEmbed(fields);
@@ -213,17 +185,7 @@ async function handleNodesApplyButton(interaction) {
 }
 
 async function handleNodesCancelButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(PENDING_KIND, nonce);
-  if (pending && pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(PENDING_KIND, nonce, pending);
-    return interaction.reply({ content: '⛔ Only the admin who started this edit can cancel it.', flags: 64 });
-  }
-  return interaction.update({
-    content: '❎ Nodes edit discarded.',
-    embeds: [],
-    components: [],
-  });
+  return handleCancelInteraction(interaction, PENDING_KIND, '❎ Nodes edit discarded.');
 }
 
 // ── Admin: Post Nodes (panel button) ─────────────────────────────────────────

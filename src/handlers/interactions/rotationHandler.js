@@ -10,9 +10,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  ActionRowBuilder
 } = require('discord.js');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
@@ -31,8 +29,9 @@ const {
 } = require('../../utils/rotationCycle');
 const {
   storePendingEdit,
-  consumePendingEdit,
-  restorePendingEdit,
+  buildPreviewButtons,
+  beginApplyInteraction,
+  handleCancelInteraction,
 } = require('../../utils/pendingEdits');
 
 const PENDING_KIND = 'rotation';
@@ -251,44 +250,16 @@ async function handleRotationModalSubmit(interaction) {
     ownerId: interaction.user.id,
   });
 
-  const buttonsRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`rotation_apply:${nonce}`)
-      .setLabel('Apply')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('✅'),
-    new ButtonBuilder()
-      .setCustomId(`rotation_cancel:${nonce}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✖️')
-  );
-
   return interaction.editReply({
     content: '👀 **Preview** — check the dates/maps below, then click **Apply** to publish or **Cancel** to discard.',
     embeds: [previewEmbed],
-    components: [buttonsRow],
+    components: [buildPreviewButtons(PENDING_KIND, nonce)],
   });
 }
 
 async function handleRotationApplyButton(interaction) {
-  const nonce = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(PENDING_KIND, nonce);
-
-  if (!pending) {
-    await interaction.update({
-      content: '⏰ Preview expired or already used. Re-open **Edit Map Rotation** to try again.',
-      embeds: [],
-      components: [],
-    });
-    return false;
-  }
-  if (pending.ownerId !== interaction.user.id) {
-    // Return it to the store so the original owner can still use it.
-    restorePendingEdit(PENDING_KIND, nonce, pending);
-    await interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
-    return false;
-  }
+  const pending = await beginApplyInteraction(interaction, PENDING_KIND, 'Edit Map Rotation');
+  if (!pending) return false;
 
   const { channelId, messageId, data, rawInputs } = pending;
   const embed = buildRotationEmbed(data);
@@ -335,17 +306,7 @@ async function handleRotationApplyButton(interaction) {
 }
 
 async function handleRotationCancelButton(interaction) {
-  const nonce = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(PENDING_KIND, nonce);
-  if (pending && pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(PENDING_KIND, nonce, pending);
-    return interaction.reply({ content: '⛔ Only the admin who started this edit can cancel it.', flags: 64 });
-  }
-  return interaction.update({
-    content: '❎ Rotation edit discarded.',
-    embeds: [],
-    components: [],
-  });
+  return handleCancelInteraction(interaction, PENDING_KIND, '❎ Rotation edit discarded.');
 }
 
 // ── Admin: Post Map Rotation ──────────────────────────────────────────────────

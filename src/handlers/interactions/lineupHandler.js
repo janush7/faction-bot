@@ -11,9 +11,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  ActionRowBuilder
 } = require('discord.js');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
@@ -22,8 +20,9 @@ const { sendLog, findLastBotMessage } = require('./shared');
 const { saveLineupData, loadLineupData, saveServerData, loadServerData } = require('../../utils/lineupStore');
 const {
   storePendingEdit,
-  consumePendingEdit,
-  restorePendingEdit,
+  buildPreviewButtons,
+  beginApplyInteraction,
+  handleCancelInteraction,
 } = require('../../utils/pendingEdits');
 
 const CAPTION_KIND = 'lineup_caption';
@@ -124,43 +123,16 @@ async function handleLineupCaptionSubmit(interaction) {
     ownerId: interaction.user.id,
   });
 
-  const buttonsRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`lineup_caption_apply:${nonce}`)
-      .setLabel('Apply')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('\u2705'),
-    new ButtonBuilder()
-      .setCustomId(`lineup_caption_cancel:${nonce}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('\u2716\ufe0f')
-  );
-
   return interaction.editReply({
     content: '\ud83d\udc40 **Preview** \u2014 check the caption below, then click **Apply** to publish or **Cancel** to discard.',
     embeds: [previewEmbed],
-    components: [buttonsRow],
+    components: [buildPreviewButtons(CAPTION_KIND, nonce)],
   });
 }
 
 async function handleLineupCaptionApplyButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(CAPTION_KIND, nonce);
-
-  if (!pending) {
-    await interaction.update({
-      content: '\u23f0 Preview expired or already used. Re-open **Edit Lineup Caption** to try again.',
-      embeds: [],
-      components: [],
-    });
-    return false;
-  }
-  if (pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(CAPTION_KIND, nonce, pending);
-    await interaction.reply({ content: '\u26d4 Only the admin who started this edit can Apply it.', flags: 64 });
-    return false;
-  }
+  const pending = await beginApplyInteraction(interaction, CAPTION_KIND, 'Edit Lineup Caption');
+  if (!pending) return false;
 
   const { channelId, messageId, server, caption: newCaption } = pending;
 
@@ -214,17 +186,7 @@ async function handleLineupCaptionApplyButton(interaction) {
 }
 
 async function handleLineupCaptionCancelButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(CAPTION_KIND, nonce);
-  if (pending && pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(CAPTION_KIND, nonce, pending);
-    return interaction.reply({ content: '\u26d4 Only the admin who started this edit can cancel it.', flags: 64 });
-  }
-  return interaction.update({
-    content: '\u274e Caption edit discarded.',
-    embeds: [],
-    components: [],
-  });
+  return handleCancelInteraction(interaction, CAPTION_KIND, '\u274e Caption edit discarded.');
 }
 
 // ── Edit Server Button (from Post Server ephemeral reply) ─────────────────────
@@ -315,43 +277,16 @@ async function handleServerModalSubmit(interaction) {
     ownerId: interaction.user.id,
   });
 
-  const buttonsRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`lineup_server_apply:${nonce}`)
-      .setLabel('Apply')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('\u2705'),
-    new ButtonBuilder()
-      .setCustomId(`lineup_server_cancel:${nonce}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('\u2716\ufe0f')
-  );
-
   return interaction.editReply({
     content: '\ud83d\udc40 **Preview** \u2014 check the server details below, then click **Apply** to publish or **Cancel** to discard.',
     embeds: [previewEmbed],
-    components: [buttonsRow],
+    components: [buildPreviewButtons(SERVER_KIND, nonce)],
   });
 }
 
 async function handleServerApplyButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(SERVER_KIND, nonce);
-
-  if (!pending) {
-    await interaction.update({
-      content: '\u23f0 Preview expired or already used. Re-open **Edit Server Details** to try again.',
-      embeds: [],
-      components: [],
-    });
-    return false;
-  }
-  if (pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(SERVER_KIND, nonce, pending);
-    await interaction.reply({ content: '\u26d4 Only the admin who started this edit can Apply it.', flags: 64 });
-    return false;
-  }
+  const pending = await beginApplyInteraction(interaction, SERVER_KIND, 'Edit Server Details');
+  if (!pending) return false;
 
   const { channelId, messageId, server, name: newName, password: newPass } = pending;
   const updated = buildServerDetailsEmbed(server, newName, newPass);
@@ -386,17 +321,7 @@ async function handleServerApplyButton(interaction) {
 }
 
 async function handleServerCancelButton(interaction) {
-  const nonce   = interaction.customId.split(':')[1] || '';
-  const pending = consumePendingEdit(SERVER_KIND, nonce);
-  if (pending && pending.ownerId !== interaction.user.id) {
-    restorePendingEdit(SERVER_KIND, nonce, pending);
-    return interaction.reply({ content: '\u26d4 Only the admin who started this edit can cancel it.', flags: 64 });
-  }
-  return interaction.update({
-    content: '\u274e Server details edit discarded.',
-    embeds: [],
-    components: [],
-  });
+  return handleCancelInteraction(interaction, SERVER_KIND, '\u274e Server details edit discarded.');
 }
 
 // ── Admin: Post Server Details (panel button) ─────────────────────────────────
