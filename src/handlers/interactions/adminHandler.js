@@ -228,8 +228,7 @@ async function handleAdminClearLogs(interaction) {
 
 async function handleAdminHealthcheck(interaction) {
   // Ack the select-menu interaction with deferUpdate so the panel stays
-  // in place and the shared finally-block in interactionCreate.js can
-  // reset the dropdown placeholder via refreshPanelMessage().
+  // in place; the healthcheck result is sent as an ephemeral follow-up.
   await interaction.deferUpdate();
 
   const guildId = process.env.GUILD_ID;
