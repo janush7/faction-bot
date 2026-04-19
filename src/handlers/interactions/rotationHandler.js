@@ -130,7 +130,7 @@ function parseEventLines(text) {
       new Date(`${yyyy}-${mm}-${dd}T${String(utcHour).padStart(2, '0')}:00:00Z`).getTime() / 1000
     );
 
-    return `<t:${unix}:F> - **${mapName.trim()}**`;
+    return `<t:${unix}:f> - **${mapName.trim()}**`;
   }).join('\n');
 }
 
