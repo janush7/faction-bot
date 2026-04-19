@@ -77,7 +77,8 @@ module.exports = {
     if (interaction.isModalSubmit()) {
       try {
         if (interaction.customId.startsWith('lineup_caption:')) {
-          const server = interaction.customId.split(':')[1] || null;
+          // customId: lineup_caption:CHANNEL_ID:MESSAGE_ID[:SERVER]
+          const server = interaction.customId.split(':')[3] || null;
           return await trackAction(
             interaction,
             server ? `Edit Lineup — ${server}` : 'Edit Lineup',
@@ -85,7 +86,8 @@ module.exports = {
           );
         }
         if (interaction.customId.startsWith('lineup_server:')) {
-          const server = interaction.customId.split(':')[1] || null;
+          // customId: lineup_server:CHANNEL_ID:MESSAGE_ID[:SERVER]
+          const server = interaction.customId.split(':')[3] || null;
           return await trackAction(
             interaction,
             server ? `Edit Server Details — ${server}` : 'Edit Server Details',
