@@ -26,45 +26,48 @@ function humanizeAgo(ms) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-function factionToken() {
-  return `🛡️ ${process.env.FACTION_CHANNEL ? OK : NO}`;
+function factionLine() {
+  return `🛡️ **Faction Embed**   ${process.env.FACTION_CHANNEL ? OK : NO}`;
 }
 
-function lineupToken() {
+function lineupLine() {
   const ch = process.env.LINEUP_CHANNEL;
-  if (!ch) return `📋 ${NO}`;
-  return `📋 S1${loadLineupData(ch, 'S1') ? OK : NO} S2${loadLineupData(ch, 'S2') ? OK : NO}`;
+  if (!ch) return `📋 **Lineup**   ${NO}`;
+  return `📋 **Lineup**   S1 ${loadLineupData(ch, 'S1') ? OK : NO}  •  S2 ${loadLineupData(ch, 'S2') ? OK : NO}`;
 }
 
-function serverToken() {
+function serverLine() {
   const ch = process.env.SERVER_DETAILS_CHANNEL;
-  if (!ch) return `🖥️ ${NO}`;
-  return `🖥️ S1${loadServerData(ch, 'S1') ? OK : NO} S2${loadServerData(ch, 'S2') ? OK : NO}`;
+  if (!ch) return `🖥️ **Server Details**   ${NO}`;
+  return `🖥️ **Server Details**   S1 ${loadServerData(ch, 'S1') ? OK : NO}  •  S2 ${loadServerData(ch, 'S2') ? OK : NO}`;
 }
 
-function rotationToken() {
+function rotationLine() {
   const ch = process.env.MAP_ROTATION_CHANNEL;
-  return `🗺️ ${ch && loadRotationMsgId(ch) ? OK : NO}`;
+  return `🗺️ **Map Rotation**   ${ch && loadRotationMsgId(ch) ? OK : NO}`;
 }
 
-function nodesToken() {
+function nodesLine() {
   const channels = (process.env.NODES_CHANNELS || '').split(',').map(s => s.trim()).filter(Boolean);
-  return `📍 ${loadNodesData() ? OK : NO}${channels.length ? ` (${channels.length})` : ''}`;
+  const suffix = channels.length ? `   _(${channels.length} channel${channels.length === 1 ? '' : 's'})_` : '';
+  return `📍 **Nodes**   ${loadNodesData() ? OK : NO}${suffix}`;
 }
 
 function buildPanelPayload() {
-  const statusLine = [
-    factionToken(),
-    lineupToken(),
-    serverToken(),
-    rotationToken(),
-    nodesToken()
-  ].join('    ');
+  const description = [
+    factionLine(),
+    lineupLine(),
+    serverLine(),
+    rotationLine(),
+    nodesLine(),
+    '',
+    `_${OK} posted  •  ${NO} not posted_`
+  ].join('\n');
 
   const embed = new EmbedBuilder()
     .setTitle('⚙️  Admin Panel')
     .setColor(0x011327)
-    .setDescription(statusLine)
+    .setDescription(description)
     .setFooter({
       text: `v${pkg.version}  •  deployed ${humanizeAgo(Date.now() - BOT_STARTED_AT_MS)}`
     });
