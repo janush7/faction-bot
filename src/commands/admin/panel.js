@@ -118,9 +118,28 @@ function jumpUrl(guildId, channelId, messageId) {
   return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
 }
 
+function channelUrl(guildId, channelId) {
+  if (!guildId || !channelId) return null;
+  return `https://discord.com/channels/${guildId}/${channelId}`;
+}
+
 function jumpSuffix(guildId, channelId, messageId) {
   const url = jumpUrl(guildId, channelId, messageId);
   return url ? `  [↗](${url})` : '';
+}
+
+// Fallback suffix used when there is no posted message yet — link to the
+// destination channel so the admin can jump to where the embed *would*
+// appear once posted. Returns '' when channelId is unknown.
+function channelSuffix(guildId, channelId) {
+  const url = channelUrl(guildId, channelId);
+  return url ? `  [↗](${url})` : '';
+}
+
+function firstChannel(envKey) {
+  const raw = process.env[envKey];
+  if (!raw) return null;
+  return String(raw).split(',').map(s => s.trim()).find(Boolean) ?? null;
 }
 
 // ── Status probes ────────────────────────────────────────────────────────────
@@ -220,29 +239,42 @@ async function probePanelState(client) {
 
 // ── Description rows ─────────────────────────────────────────────────────────
 
+// Prefer a direct message jump when available; otherwise fall back to the
+// destination channel so admins always get a clickable target.
+function bestSuffix(guildId, locator, fallbackChannelId) {
+  if (locator) return jumpSuffix(guildId, locator.channelId, locator.messageId);
+  return channelSuffix(guildId, fallbackChannelId);
+}
+
 function factionRow(locator, guildId) {
-  if (!locator) return `🛡️ **Faction Embed**   ${NO}`;
-  return `🛡️ **Faction Embed**   ${OK}${jumpSuffix(guildId, locator.channelId, locator.messageId)}`;
+  const ch = process.env.FACTION_CHANNEL;
+  const icon = locator ? OK : NO;
+  return `🛡️ **Faction Embed**   ${icon}${bestSuffix(guildId, locator, ch)}`;
 }
 
 function serverPairRow(emojiLabel, l1, l2, guildId, envKey) {
-  if (!process.env[envKey]) return `${emojiLabel}   ${NO}`;
-  const s1 = l1 ? `${OK}${jumpSuffix(guildId, l1.channelId, l1.messageId)}` : NO;
-  const s2 = l2 ? `${OK}${jumpSuffix(guildId, l2.channelId, l2.messageId)}` : NO;
+  const ch = process.env[envKey];
+  if (!ch) return `${emojiLabel}   ${NO}`;
+  const s1 = `${l1 ? OK : NO}${bestSuffix(guildId, l1, ch)}`;
+  const s2 = `${l2 ? OK : NO}${bestSuffix(guildId, l2, ch)}`;
   return `${emojiLabel}   S1 ${s1} • S2 ${s2}`;
 }
 
 function rotationRow(locator, guildId) {
-  if (!locator) return `🗺️ **Map Rotation**   ${NO}`;
-  return `🗺️ **Map Rotation**   ${OK}${jumpSuffix(guildId, locator.channelId, locator.messageId)}`;
+  const ch = process.env.MAP_ROTATION_CHANNEL;
+  const icon = locator ? OK : NO;
+  return `🗺️ **Map Rotation**   ${icon}${bestSuffix(guildId, locator, ch)}`;
 }
 
 function nodesRow({ total, hits }, guildId) {
-  if (!total) return `📍 **Nodes**   ${NO}`;
+  if (!total) return `📍 **Nodes**   ${NO}${channelSuffix(guildId, firstChannel('NODES_CHANNELS'))}`;
   const posted = hits.length;
   const icon = posted === 0 ? NO : posted === total ? OK : PARTIAL;
-  // Only one jump link (first hit) — too noisy to list all.
-  const suffix = hits.length ? jumpSuffix(guildId, hits[0].channelId, hits[0].messageId) : '';
+  // Prefer jumping to the first posted embed; otherwise link to the first
+  // configured Nodes channel so the admin can still navigate there.
+  const suffix = hits.length
+    ? jumpSuffix(guildId, hits[0].channelId, hits[0].messageId)
+    : channelSuffix(guildId, firstChannel('NODES_CHANNELS'));
   return `📍 **Nodes**   ${icon}${suffix}   _(${posted}/${total} channel${total === 1 ? '' : 's'})_`;
 }
 

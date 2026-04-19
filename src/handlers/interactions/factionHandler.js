@@ -29,6 +29,37 @@ function cooldownSeconds() {
   return Number.isFinite(raw) && raw >= 0 ? raw : 20;
 }
 
+// ── In-process throttle ───────────────────────────────────────────────────────
+// When many users click faction buttons at the same moment, firing every
+// `roles.remove`+`roles.add` concurrently hammers Discord's rate limiter
+// and spikes latency for the whole bot. A small FIFO semaphore caps how
+// many swaps execute in parallel; the rest wait their turn. Tuned via
+// FACTION_SWAP_CONCURRENCY (default 5).
+const pendingQueue = [];
+let activeSlots = 0;
+
+function maxConcurrency() {
+  const raw = Number.parseInt(process.env.FACTION_SWAP_CONCURRENCY ?? '5', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5;
+}
+
+function acquireSlot() {
+  return new Promise(resolve => {
+    if (activeSlots < maxConcurrency()) {
+      activeSlots++;
+      resolve();
+    } else {
+      pendingQueue.push(resolve);
+    }
+  });
+}
+
+function releaseSlot() {
+  const next = pendingQueue.shift();
+  if (next) next();
+  else activeSlots = Math.max(0, activeSlots - 1);
+}
+
 async function handleFactionSelection(interaction, factionKey) {
   const faction = getFaction(factionKey);
   if (!faction) {
@@ -80,6 +111,12 @@ async function handleFactionSelection(interaction, factionKey) {
   }
   swapInProgress.add(userId);
 
+  // Defer before acquiring a slot: when many users click at once, queued
+  // swaps can wait longer than Discord's 3s interaction budget, which would
+  // otherwise fail the reply.
+  await interaction.deferReply({ flags: 64 });
+  await acquireSlot();
+
   try {
     // Remove any other faction role(s) the user currently holds — one faction
     // at a time across all servers.
@@ -111,12 +148,12 @@ async function handleFactionSelection(interaction, factionKey) {
 
     await sendLog(interaction.client, logEmbed);
 
-    return interaction.reply({
+    return interaction.editReply({
       content: `✅ You have joined **${factionLabel}**! Good luck on the battlefield!`,
-      flags: 64
     });
   } finally {
     swapInProgress.delete(userId);
+    releaseSlot();
   }
 }
 
