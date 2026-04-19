@@ -55,6 +55,44 @@ function getWarsawOffsetHours(date) {
 }
 
 /**
+ * Converts "<t:unix:f> - **MapName**" lines back to "DD/MM/YYYY - MapName"
+ * (using Europe/Warsaw for the date). Lines that don't match are passed through.
+ */
+function reverseParseEventLines(text) {
+  if (!text) return '';
+  return text.split('\n').map(line => {
+    const m = line.trim().match(/^<t:(\d+):[a-zA-Z]>\s*-\s*\*\*\s*(.+?)\s*\*\*\s*$/);
+    if (!m) return line;
+    const [, unixStr, rawMap] = m;
+    const mapName = rawMap.replace(/`/g, '').trim();
+    const d = new Date(parseInt(unixStr, 10) * 1000);
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Warsaw',
+      day:   '2-digit',
+      month: '2-digit',
+      year:  'numeric'
+    }).formatToParts(d);
+    const dd   = parts.find(p => p.type === 'day').value;
+    const mm   = parts.find(p => p.type === 'month').value;
+    const yyyy = parts.find(p => p.type === 'year').value;
+    return `${dd}/${mm}/${yyyy} - ${mapName}`;
+  }).join('\n');
+}
+
+/**
+ * Converts raw embed text to the DD/MM/YYYY editable form used by the modal.
+ */
+function toEditableForm(data) {
+  if (!data) return null;
+  return {
+    month1Header: data.month1Header,
+    month1Events: reverseParseEventLines(data.month1Events),
+    month2Header: data.month2Header,
+    month2Events: reverseParseEventLines(data.month2Events)
+  };
+}
+
+/**
  * Fetches the live rotation message from Discord, preferring the stored messageId
  * but falling back to a channel scan when that message is missing or isn't a rotation
  * embed. Updates the stored messageId when a newer rotation is found.
@@ -300,7 +338,7 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  const data = loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
+  const data = toEditableForm(loadRotationRaw(storedMsgId)) ?? getDefaultRotationData();
   refreshRotationRawInBackground(interaction.client, channelId, storedMsgId);
 
   const modal = new ModalBuilder()
