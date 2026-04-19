@@ -72,25 +72,26 @@ async function handleLineupCaptionSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
     const old = msg.embeds[0];
 
-    // Keep the existing attachment claimed by the embed via `attachment://`
-    // instead of pointing the embed at the CDN URL. Otherwise Discord renders
-    // the image twice — once inside the embed and once as an unclaimed
-    // attachment preview below it.
+    // Use the existing attachment's fresh URL for the embed image and pass
+    // the attachment through the edit so Discord links them and doesn't
+    // render the image twice (once in the embed, once as a standalone
+    // preview below it). `attachment://` only resolves to files in `files`,
+    // so we can't use it here for attachments that are already on the
+    // message.
     const existingAttachment = msg.attachments.first();
+    const imageUrl           = existingAttachment?.url ?? old.image?.url ?? null;
 
     const updated = new EmbedBuilder()
       .setColor(old.color)
       .setFooter({ text: newCaption });
 
-    if (old.fields?.length)       updated.addFields(...old.fields);
-    if (existingAttachment)       updated.setImage(`attachment://${existingAttachment.name}`);
-    else if (old.image?.url)      updated.setImage(old.image.url);
-    if (old.thumbnail?.url)       updated.setThumbnail(old.thumbnail.url);
+    if (old.fields?.length) updated.addFields(...old.fields);
+    if (imageUrl)           updated.setImage(imageUrl);
+    if (old.thumbnail?.url) updated.setThumbnail(old.thumbnail.url);
 
     await msg.edit({
-      embeds: [updated],
-      // Preserve the existing attachment so `attachment://` resolves.
-      attachments: existingAttachment ? [{ id: existingAttachment.id }] : []
+      embeds:      [updated],
+      attachments: [...msg.attachments.values()]
     });
 
     // Update cache
