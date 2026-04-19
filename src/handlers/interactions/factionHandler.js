@@ -11,6 +11,16 @@ const { createErrorEmbed } = require('../../utils/embeds');
 const { sendLog } = require('./shared');
 const { getFaction, getFactionRoleId, getAllFactionRoleIds } = require('../../config/factions');
 
+// Per-user cooldown (anti-spam) on actual faction swaps. Keyed by Discord
+// user ID, value is the Unix-ms timestamp of the last successful swap.
+// Resets on process restart — fine for this use case.
+const lastSwapAtMs = new Map();
+
+function cooldownSeconds() {
+  const raw = parseInt(process.env.FACTION_SWAP_COOLDOWN_SECONDS ?? '20', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 20;
+}
+
 async function handleFactionSelection(interaction, factionKey) {
   const faction = getFaction(factionKey);
   if (!faction) {
@@ -35,6 +45,20 @@ async function handleFactionSelection(interaction, factionKey) {
     return interaction.reply({ content: `⚠️ You are already on **${factionLabel}**!`, flags: 64 });
   }
 
+  // Anti-spam: enforce per-user cooldown between faction swaps.
+  const cdSec = cooldownSeconds();
+  if (cdSec > 0) {
+    const last = lastSwapAtMs.get(interaction.user.id) ?? 0;
+    const elapsedSec = Math.floor((Date.now() - last) / 1000);
+    if (elapsedSec < cdSec) {
+      const waitSec = cdSec - elapsedSec;
+      return interaction.reply({
+        content: `⏳ Slow down! You can swap factions again in **${waitSec}s**.`,
+        flags: 64
+      });
+    }
+  }
+
   // Remove any other faction role(s) the user currently holds — one faction
   // at a time across all servers.
   const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
@@ -48,6 +72,7 @@ async function handleFactionSelection(interaction, factionKey) {
   }
 
   await member.roles.add(selectedRoleId);
+  lastSwapAtMs.set(interaction.user.id, Date.now());
   logger.info(`${interaction.user.tag} joined ${factionLabel}`);
 
   const logEmbed = new EmbedBuilder()
