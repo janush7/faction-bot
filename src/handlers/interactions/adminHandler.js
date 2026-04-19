@@ -227,7 +227,10 @@ async function handleAdminClearLogs(interaction) {
 // ── Admin: Healthcheck ────────────────────────────────────────────────────────
 
 async function handleAdminHealthcheck(interaction) {
-  await interaction.deferReply({ flags: 64 });
+  // Ack the select-menu interaction with deferUpdate so the panel stays
+  // in place and the shared finally-block in interactionCreate.js can
+  // reset the dropdown placeholder via refreshPanelMessage().
+  await interaction.deferUpdate();
 
   const guildId = process.env.GUILD_ID;
   const { passed, total, issues } = await runHealthcheck(interaction.client, guildId);
@@ -252,7 +255,7 @@ async function handleAdminHealthcheck(interaction) {
 
   logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s)`);
 
-  return interaction.editReply({ embeds: [embed] });
+  return interaction.followUp({ embeds: [embed], flags: 64 });
 }
 
 module.exports = {
