@@ -47,15 +47,21 @@ function loadLineupData(channelId, server) {
 }
 
 // ── Server details cache ──────────────────────────────────────────────────────
+// Keyed by `${channelId}:${server}` when `server` ('S1' | 'S2') is provided,
+// otherwise by plain `channelId`.
 
-function saveServerData(channelId, messageId, serverName, serverPassword) {
+function _serverKey(channelId, server) {
+  return server ? `${channelId}:${server}` : channelId;
+}
+
+function saveServerData(channelId, messageId, serverName, serverPassword, server) {
   const store = _read(SERVER_PATH);
-  store[channelId] = { messageId, serverName, serverPassword };
+  store[_serverKey(channelId, server)] = { messageId, serverName, serverPassword, server: server || null };
   _write(SERVER_PATH, store);
 }
 
-function loadServerData(channelId) {
-  return _read(SERVER_PATH)[channelId] ?? null;
+function loadServerData(channelId, server) {
+  return _read(SERVER_PATH)[_serverKey(channelId, server)] ?? null;
 }
 
 module.exports = { saveLineupData, loadLineupData, saveServerData, loadServerData };
