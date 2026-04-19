@@ -45,13 +45,23 @@ module.exports = {
     // Row 2 — Server Details
     const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('admin_post_server')
-        .setLabel('Post Server Details')
+        .setCustomId('admin_post_server:S1')
+        .setLabel('Post Server S1')
         .setStyle(ButtonStyle.Success)
         .setEmoji('📤'),
       new ButtonBuilder()
-        .setCustomId('admin_edit_server')
-        .setLabel('Edit Server Details')
+        .setCustomId('admin_post_server:S2')
+        .setLabel('Post Server S2')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('📤'),
+      new ButtonBuilder()
+        .setCustomId('admin_edit_server:S1')
+        .setLabel('Edit Server S1')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('✏️'),
+      new ButtonBuilder()
+        .setCustomId('admin_edit_server:S2')
+        .setLabel('Edit Server S2')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('✏️')
     );

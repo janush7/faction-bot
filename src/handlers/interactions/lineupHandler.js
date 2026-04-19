@@ -21,6 +21,25 @@ const { THUMBNAIL_URL } = require('../../config/constants');
 const { sendLog, findLastBotMessage } = require('./shared');
 const { saveLineupData, loadLineupData, saveServerData, loadServerData } = require('../../utils/lineupStore');
 
+function getServerDefaults(server) {
+  if (server === 'S1') {
+    return {
+      defaultName: process.env.SERVER_S1_NAME     || process.env.SERVER_NAME     || 'HCIA EU 1',
+      defaultPass: process.env.SERVER_S1_PASSWORD || process.env.SERVER_PASSWORD || 'MWFTIME'
+    };
+  }
+  if (server === 'S2') {
+    return {
+      defaultName: process.env.SERVER_S2_NAME     || process.env.SERVER_NAME     || 'HCIA EU 2',
+      defaultPass: process.env.SERVER_S2_PASSWORD || process.env.SERVER_PASSWORD || 'MWFTIME'
+    };
+  }
+  return {
+    defaultName: process.env.SERVER_NAME     || 'HCIA EU 1',
+    defaultPass: process.env.SERVER_PASSWORD || 'MWFTIME'
+  };
+}
+
 // ── Edit Caption Button (from /lineup ephemeral reply) ────────────────────────
 
 async function handleLineupEditCapButton(interaction) {
@@ -117,10 +136,12 @@ async function handleLineupEditServerButton(interaction) {
   const parts     = interaction.customId.split(':');
   const channelId = parts[1];
   const messageId = parts[2];
+  const server    = parts[3] || null; // S1 | S2 | null (legacy)
 
-  const cached = loadServerData(channelId);
-  let currentName = cached?.serverName     ?? process.env.SERVER_NAME     ?? 'HCIA EU 1';
-  let currentPass = cached?.serverPassword ?? process.env.SERVER_PASSWORD ?? 'MWFTIME';
+  const { defaultName, defaultPass } = getServerDefaults(server);
+  const cached = loadServerData(channelId, server);
+  let currentName = cached?.serverName     ?? defaultName;
+  let currentPass = cached?.serverPassword ?? defaultPass;
 
   if (!cached || cached.messageId !== messageId) {
     try {
@@ -129,13 +150,14 @@ async function handleLineupEditServerButton(interaction) {
       const fields = msg.embeds[0]?.fields ?? [];
       currentName  = fields.find(f => f.name.includes('Server Name'))?.value ?? currentName;
       currentPass  = fields.find(f => f.name.includes('Password'))?.value   ?? currentPass;
-      saveServerData(channelId, messageId, currentName, currentPass);
+      saveServerData(channelId, messageId, currentName, currentPass, server);
     } catch (_) {}
   }
 
+  const serverSuffix = server ? `:${server}` : '';
   const modal = new ModalBuilder()
-    .setCustomId(`lineup_server:${channelId}:${messageId}`)
-    .setTitle('Edit Server Details');
+    .setCustomId(`lineup_server:${channelId}:${messageId}${serverSuffix}`)
+    .setTitle(server ? `Edit Server Details (${server})` : 'Edit Server Details');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
@@ -167,6 +189,7 @@ async function handleServerModalSubmit(interaction) {
   const parts     = interaction.customId.split(':');
   const channelId = parts[1];
   const messageId = parts[2];
+  const server    = parts[3] || null; // S1 | S2 | null (legacy)
   const newName   = interaction.fields.getTextInputValue('server_name');
   const newPass   = interaction.fields.getTextInputValue('server_password');
 
@@ -175,7 +198,7 @@ async function handleServerModalSubmit(interaction) {
     const msg = await ch.messages.fetch(messageId);
 
     const updated = new EmbedBuilder()
-      .setTitle('Server Details')
+      .setTitle(server ? `Server Details (${server})` : 'Server Details')
       .setColor(0x011327)
       .setThumbnail(THUMBNAIL_URL)
       .addFields(
@@ -185,11 +208,11 @@ async function handleServerModalSubmit(interaction) {
 
     await msg.edit({ embeds: [updated] });
 
-    saveServerData(channelId, messageId, newName, newPass);
+    saveServerData(channelId, messageId, newName, newPass, server);
 
-    logger.info(`${interaction.user.tag} updated server details: ${newName} / ${newPass}`);
+    logger.info(`${interaction.user.tag} updated ${server || 'legacy'} server details: ${newName} / ${newPass}`);
     await interaction.reply({
-      content: `\u2705 Server details updated!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
+      content: `\u2705 Server details updated${server ? ` for **${server}**` : ''}!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
       flags: 64
     });
   } catch (err) {
@@ -203,6 +226,7 @@ async function handleServerModalSubmit(interaction) {
 async function handleAdminPostServer(interaction) {
   await interaction.deferReply({ flags: 64 });
 
+  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.SERVER_DETAILS_CHANNEL;
   const channel   = channelId
     ? await interaction.client.channels.fetch(channelId).catch(() => null)
@@ -214,11 +238,12 @@ async function handleAdminPostServer(interaction) {
     });
   }
 
-  const serverName     = process.env.SERVER_NAME     || 'HCIA EU 1';
-  const serverPassword = process.env.SERVER_PASSWORD || 'MWFTIME';
+  const { defaultName, defaultPass } = getServerDefaults(server);
+  const serverName     = defaultName;
+  const serverPassword = defaultPass;
 
   const serverEmbed = new EmbedBuilder()
-    .setTitle('Server Details')
+    .setTitle(server ? `Server Details (${server})` : 'Server Details')
     .setColor(0x011327)
     .setThumbnail(THUMBNAIL_URL)
     .addFields(
@@ -228,13 +253,13 @@ async function handleAdminPostServer(interaction) {
 
   const serverMsg = await channel.send({ embeds: [serverEmbed] });
 
-  saveServerData(channel.id, serverMsg.id, serverName, serverPassword);
+  saveServerData(channel.id, serverMsg.id, serverName, serverPassword, server);
 
-  logger.info(`${interaction.user.tag} posted server details to #${channel.name}`);
+  logger.info(`${interaction.user.tag} posted ${server || 'legacy'} server details to #${channel.name}`);
 
   await sendLog(interaction.client, new EmbedBuilder()
     .setColor(0x011327)
-    .setTitle('\ud83d\udda5\ufe0f Server Details Posted')
+    .setTitle(server ? `\ud83d\udda5\ufe0f Server Details Posted (${server})` : '\ud83d\udda5\ufe0f Server Details Posted')
     .addFields(
       { name: '\ud83d\udc64 Admin',   value: `<@${interaction.user.id}>`, inline: true },
       { name: '\ud83d\udccc Channel', value: `<#${channel.id}>`,          inline: true }
@@ -242,14 +267,18 @@ async function handleAdminPostServer(interaction) {
     .setTimestamp()
   );
 
+  const serverSuffix = server ? `:${server}` : '';
   const editBtn = new ButtonBuilder()
-    .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}`)
-    .setLabel('Edit Server Details')
+    .setCustomId(`lineup_editserver:${channel.id}:${serverMsg.id}${serverSuffix}`)
+    .setLabel(server ? `Edit Server Details (${server})` : 'Edit Server Details')
     .setStyle(ButtonStyle.Secondary)
     .setEmoji('\u270f\ufe0f');
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Server Details Posted', `Posted to <#${channel.id}>!`)],
+    embeds: [createSuccessEmbed(
+      server ? `Server Details Posted (${server})` : 'Server Details Posted',
+      `Posted to <#${channel.id}>!`
+    )],
     components: [new ActionRowBuilder().addComponents(editBtn)]
   });
 }
@@ -309,13 +338,15 @@ async function handleAdminEditCaption(interaction) {
 // ── Admin: Edit Server Details (panel button) ─────────────────────────────────
 
 async function handleAdminEditServer(interaction) {
+  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.SERVER_DETAILS_CHANNEL || interaction.channelId;
 
-  const cached = loadServerData(channelId);
+  const cached = loadServerData(channelId, server);
   if (cached) {
+    const serverSuffix = server ? `:${server}` : '';
     const modal = new ModalBuilder()
-      .setCustomId(`lineup_server:${channelId}:${cached.messageId}`)
-      .setTitle('Edit Server Details');
+      .setCustomId(`lineup_server:${channelId}:${cached.messageId}${serverSuffix}`)
+      .setTitle(server ? `Edit Server Details (${server})` : 'Edit Server Details');
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -350,20 +381,22 @@ async function handleAdminEditServer(interaction) {
     });
   }
 
-  const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === 'Server Details'));
+  const expectedTitle = server ? `Server Details (${server})` : 'Server Details';
+  const msg = await findLastBotMessage(ch, m => m.embeds.some(e => e.title === expectedTitle));
   if (!msg) {
     return interaction.editReply({
-      content: '\u274c No Server Details message found. Post one first using **Post Server Details**.'
+      content: `\u274c No Server Details message found${server ? ` for ${server}` : ''}. Post one first using **Post Server Details${server ? ` ${server}` : ''}**.`
     });
   }
 
+  const { defaultName, defaultPass } = getServerDefaults(server);
   const fields      = msg.embeds[0]?.fields ?? [];
-  const serverName  = fields.find(f => f.name.includes('Server Name'))?.value ?? (process.env.SERVER_NAME || 'HCIA EU 1');
-  const serverPass  = fields.find(f => f.name.includes('Password'))?.value   ?? (process.env.SERVER_PASSWORD || 'MWFTIME');
-  saveServerData(channelId, msg.id, serverName, serverPass);
+  const serverName  = fields.find(f => f.name.includes('Server Name'))?.value ?? defaultName;
+  const serverPass  = fields.find(f => f.name.includes('Password'))?.value   ?? defaultPass;
+  saveServerData(channelId, msg.id, serverName, serverPass, server);
 
   await interaction.editReply({
-    content: '\u2705 Server data loaded. **Click "Edit Server Details" again** to open the editor.'
+    content: `\u2705 Server data loaded${server ? ` for ${server}` : ''}. **Click "Edit Server Details${server ? ` ${server}` : ''}" again** to open the editor.`
   });
 }
 
