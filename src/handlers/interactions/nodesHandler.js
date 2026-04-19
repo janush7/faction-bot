@@ -1,8 +1,5 @@
 /**
  * nodesHandler.js — Handles NODES embed post and edit interactions.
- *
- * Fix: handleAdminEditNodes now loads cached data from /tmp/ to avoid
- * the 3-second Discord modal timeout (same pattern as rotationHandler).
  */
 
 const {
@@ -97,7 +94,6 @@ async function handleNodesModalSubmit(interaction) {
     { name: 'Arty',            value: interaction.fields.getTextInputValue('nodes_arty') || '—' }
   ];
 
-  // Persist for round-trip editing (avoids async channel scan on next edit)
   saveNodesData(fields);
 
   const updatedEmbed = buildNodesEmbed(fields);
@@ -163,7 +159,6 @@ async function handleAdminPostNodes(interaction) {
   let failed           = 0;
   const postedChannels = [];
 
-  // Persist defaults so the edit modal can load them instantly
   saveNodesData(DEFAULT_NODES);
 
   for (const channelId of channelIds) {
@@ -201,14 +196,6 @@ async function handleAdminPostNodes(interaction) {
 
 // ── Admin: Edit Nodes (panel button) ─────────────────────────────────────────
 
-/**
- * Opens the Edit Nodes modal.
- *
- * IMPORTANT: Discord requires showModal() within 3 seconds of the interaction.
- * We first try to load cached data from /tmp/ (instant). If /tmp/ is empty
- * (e.g. after container restart), we defer, scan the channel, cache the data,
- * and ask the user to click again — same pattern as rotationHandler.
- */
 async function handleAdminEditNodes(interaction) {
   const channelIds = getNodesChannelIds();
 
@@ -219,14 +206,11 @@ async function handleAdminEditNodes(interaction) {
     });
   }
 
-  // Try instant load from /tmp/ — no async calls needed
   const cachedFields = loadNodesData();
   if (cachedFields) {
     return showNodesModal(interaction, cachedFields);
   }
 
-  // Fallback: scan channels for current data (async — risks 3-second timeout).
-  // Defer first to avoid "This interaction failed" error.
   await interaction.deferReply({ flags: 64 });
 
   let recoveredFields = null;
@@ -248,7 +232,6 @@ async function handleAdminEditNodes(interaction) {
     });
   }
 
-  // Cannot show modal after deferReply — ask user to click again
   return interaction.editReply({
     embeds: [createSuccessEmbed('Ready', 'Data recovered! Please click **Edit Nodes** again to open the editor.')]
   });

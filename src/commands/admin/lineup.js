@@ -114,7 +114,6 @@ module.exports = {
       files: [{ attachment: attachment.url, name: 'lineup.png' }],
     });
 
-    // Save to cache — so admin "Edit Caption" works instantly without channel scan
     saveLineupData(channel.id, posted.id, defaultCaption, server);
 
     const logChannel = process.env.ADMIN_LOG_CHANNEL
