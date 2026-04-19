@@ -68,7 +68,12 @@ async function trackAction(interaction, label, fn) {
   // cooldown-blocked, preview expired). Skip the audit-log entry so the
   // footer doesn't show a phantom "last action" for work that never happened.
   if (result === false) return;
-  saveLastAction(label, interaction.user.id, interaction.user.tag);
+  // Handlers may also return `{ server }` to tag the action with the
+  // specific server (S1/S2) so the panel footer shows "Edit Lineup — S1".
+  const suffix = result && typeof result === 'object' && result.server
+    ? ` — ${result.server}`
+    : '';
+  saveLastAction(`${label}${suffix}`, interaction.user.id, interaction.user.tag);
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────

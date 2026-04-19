@@ -176,6 +176,7 @@ async function handleLineupCaptionApplyButton(interaction) {
       embeds: [],
       components: [],
     });
+    return { server };
   } catch (err) {
     logger.error('Failed to edit lineup caption:', err);
     await interaction.editReply({
@@ -311,6 +312,7 @@ async function handleServerApplyButton(interaction) {
       embeds: [],
       components: [],
     });
+    return { server };
   } catch (err) {
     logger.error('Failed to edit server details:', err);
     await interaction.editReply({
