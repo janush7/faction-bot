@@ -223,10 +223,10 @@ async function handleServerModalSubmit(interaction) {
 
 // ── Admin: Post Server Details (panel button) ─────────────────────────────────
 
-async function handleAdminPostServer(interaction) {
+async function handleAdminPostServer(interaction, serverOverride) {
   await interaction.deferReply({ flags: 64 });
 
-  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
+  const server    = serverOverride || interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.SERVER_DETAILS_CHANNEL;
   const channel   = channelId
     ? await interaction.client.channels.fetch(channelId).catch(() => null)
@@ -285,8 +285,8 @@ async function handleAdminPostServer(interaction) {
 
 // ── Admin: Edit Lineup Caption (panel button) ─────────────────────────────────
 
-async function handleAdminEditCaption(interaction) {
-  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
+async function handleAdminEditCaption(interaction, serverOverride) {
+  const server    = serverOverride || interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.LINEUP_CHANNEL || interaction.channelId;
 
   const cached = loadLineupData(channelId, server);
@@ -337,8 +337,8 @@ async function handleAdminEditCaption(interaction) {
 
 // ── Admin: Edit Server Details (panel button) ─────────────────────────────────
 
-async function handleAdminEditServer(interaction) {
-  const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
+async function handleAdminEditServer(interaction, serverOverride) {
+  const server    = serverOverride || interaction.customId.split(':')[1] || null; // S1 | S2 | null
   const channelId = process.env.SERVER_DETAILS_CHANNEL || interaction.channelId;
 
   const cached = loadServerData(channelId, server);
