@@ -55,6 +55,53 @@ function getWarsawOffsetHours(date) {
 }
 
 /**
+ * Converts "<t:unix:F> - **MapName**" rendered lines back to "DD/MM/YYYY - MapName"
+ * (using Europe/Warsaw for the date) so the edit modal shows an editable format.
+ * Lines that don't match (e.g. "— No events scheduled —", plain text) are passed through.
+ */
+function reverseParseEventLines(text) {
+  if (!text) return '';
+  return text.split('\n').map(line => {
+    const m = line.trim().match(/^<t:(\d+):F>\s*-\s*\*\*(.+?)\*\*\s*$/);
+    if (!m) return line;
+    const [, unixStr, mapName] = m;
+    const d = new Date(parseInt(unixStr, 10) * 1000);
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Warsaw',
+      day:   '2-digit',
+      month: '2-digit',
+      year:  'numeric'
+    }).formatToParts(d);
+    const dd   = parts.find(p => p.type === 'day').value;
+    const mm   = parts.find(p => p.type === 'month').value;
+    const yyyy = parts.find(p => p.type === 'year').value;
+    return `${dd}/${mm}/${yyyy} - ${mapName}`;
+  }).join('\n');
+}
+
+/**
+ * Reads the currently-posted rotation embed and returns its content in the
+ * DD/MM/YYYY editable format. Returns null if the message can't be fetched
+ * or doesn't look like a rotation embed.
+ */
+async function readRotationFromEmbed(client, channelId, messageId) {
+  try {
+    const ch     = await client.channels.fetch(channelId);
+    const msg    = await ch.messages.fetch(messageId);
+    const fields = msg.embeds[0]?.fields ?? [];
+    if (fields.length < 2) return null;
+    return {
+      month1Header: fields[0].name,
+      month1Events: reverseParseEventLines(fields[0].value),
+      month2Header: fields[1].name,
+      month2Events: reverseParseEventLines(fields[1].value)
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Converts lines matching "DD/MM/YYYY - MapName" to Discord timestamps.
  * Event time is assumed to be 20:00 Europe/Warsaw.
  */
@@ -241,7 +288,8 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  const data = loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
+  const liveData = await readRotationFromEmbed(interaction.client, channelId, storedMsgId);
+  const data     = liveData ?? loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
 
   const modal = new ModalBuilder()
     .setCustomId(`rotation_edit:${channelId}:${storedMsgId}`)
