@@ -14,7 +14,6 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
-const crypto = require('crypto');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { sendLog } = require('./shared');
@@ -30,6 +29,13 @@ const {
   bootstrapRotationData,
   shouldAdvanceNow
 } = require('../../utils/rotationCycle');
+const {
+  storePendingEdit,
+  consumePendingEdit,
+  restorePendingEdit,
+} = require('../../utils/pendingEdits');
+
+const PENDING_KIND = 'rotation';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -218,31 +224,6 @@ async function findRotationMessage(channel) {
 // ephemeral preview embed + Apply / Cancel buttons is shown. The actual
 // message edit runs only when Apply is clicked.
 
-// nonce → { channelId, messageId, data, rawInputs, ownerId, expiresAt }
-const PENDING_EDITS = new Map();
-const PREVIEW_TTL_MS = 10 * 60 * 1000; // 10 min
-
-function _evictExpiredEdits(now = Date.now()) {
-  for (const [nonce, entry] of PENDING_EDITS) {
-    if (entry.expiresAt <= now) PENDING_EDITS.delete(nonce);
-  }
-}
-
-function _storePendingEdit(entry) {
-  _evictExpiredEdits();
-  const nonce = crypto.randomBytes(6).toString('hex');
-  PENDING_EDITS.set(nonce, { ...entry, expiresAt: Date.now() + PREVIEW_TTL_MS });
-  return nonce;
-}
-
-function _consumePendingEdit(nonce) {
-  _evictExpiredEdits();
-  const entry = PENDING_EDITS.get(nonce);
-  if (!entry) return null;
-  PENDING_EDITS.delete(nonce);
-  return entry;
-}
-
 async function handleRotationModalSubmit(interaction) {
   await interaction.deferReply({ flags: 64 });
 
@@ -262,7 +243,7 @@ async function handleRotationModalSubmit(interaction) {
   const rawInputs = { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw };
   const previewEmbed = buildRotationEmbed(data);
 
-  const nonce = _storePendingEdit({
+  const nonce = storePendingEdit(PENDING_KIND, {
     channelId,
     messageId,
     data,
@@ -292,7 +273,7 @@ async function handleRotationModalSubmit(interaction) {
 
 async function handleRotationApplyButton(interaction) {
   const nonce = interaction.customId.split(':')[1] || '';
-  const pending = _consumePendingEdit(nonce);
+  const pending = consumePendingEdit(PENDING_KIND, nonce);
 
   if (!pending) {
     await interaction.update({
@@ -304,7 +285,7 @@ async function handleRotationApplyButton(interaction) {
   }
   if (pending.ownerId !== interaction.user.id) {
     // Return it to the store so the original owner can still use it.
-    PENDING_EDITS.set(nonce, pending);
+    restorePendingEdit(PENDING_KIND, nonce, pending);
     await interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
     return false;
   }
@@ -355,9 +336,9 @@ async function handleRotationApplyButton(interaction) {
 
 async function handleRotationCancelButton(interaction) {
   const nonce = interaction.customId.split(':')[1] || '';
-  const pending = _consumePendingEdit(nonce);
+  const pending = consumePendingEdit(PENDING_KIND, nonce);
   if (pending && pending.ownerId !== interaction.user.id) {
-    PENDING_EDITS.set(nonce, pending);
+    restorePendingEdit(PENDING_KIND, nonce, pending);
     return interaction.reply({ content: '⛔ Only the admin who started this edit can cancel it.', flags: 64 });
   }
   return interaction.update({

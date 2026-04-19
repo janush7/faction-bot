@@ -234,6 +234,25 @@ async function handleAdminHealthcheck(interaction) {
   const guildId = process.env.GUILD_ID;
   const { passed, total, issues, notes = [] } = await runHealthcheck(interaction.client, guildId);
 
+  const embed = _buildHealthcheckEmbed(passed, total, issues, notes);
+
+  logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s), ${notes.length} note(s)`);
+
+  const components = [];
+  if (issues.length > 0) {
+    components.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('admin_healthcheck_autofix')
+        .setLabel('Try auto-fix')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🔧')
+    ));
+  }
+
+  return interaction.followUp({ embeds: [embed], components, flags: 64 });
+}
+
+function _buildHealthcheckEmbed(passed, total, issues, notes) {
   const allGood = issues.length === 0;
   const color   = allGood ? 0x2ecc71 : 0xe67e22;
   const title   = allGood
@@ -251,15 +270,154 @@ async function handleAdminHealthcheck(interaction) {
   else parts.push(issueLines.join('\n'));
   if (notes.length) parts.push(`ℹ️ ${notes.join(' · ')}`);
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
     .setDescription(parts.join('\n\n') || '—')
     .setTimestamp();
+}
 
-  logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s), ${notes.length} note(s)`);
+// ── Admin: Healthcheck Auto-fix ───────────────────────────────────────────────
+// Re-runs the probes and, for each issue kind we know how to help with,
+// emits a concrete remediation block. Nothing is changed on Discord — the
+// admin still has to follow the instructions — but every step they need is
+// spelled out so they don't have to hunt for it.
 
-  return interaction.followUp({ embeds: [embed], flags: 64 });
+async function handleAdminHealthcheckAutofix(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const guildId = process.env.GUILD_ID;
+  const { issues, notes = [] } = await runHealthcheck(interaction.client, guildId);
+
+  if (issues.length === 0) {
+    return interaction.editReply({
+      embeds: [createSuccessEmbed('Nothing to fix', 'Healthcheck is all green — no action needed.')],
+    });
+  }
+
+  const byKind = new Map();
+  for (const issue of issues) {
+    const k = issue.kind || 'other';
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(issue);
+  }
+
+  const sections = [];
+
+  if (byKind.has('env')) {
+    const keys = byKind.get('env').map(i => i.key).filter(Boolean);
+    const uniq = Array.from(new Set(keys));
+    sections.push([
+      '**Missing env vars**',
+      uniq.length
+        ? 'Add the following to your `.env` file and restart the bot:'
+        : 'Check your `.env` for missing/empty values.',
+      uniq.length ? '```' + uniq.map(k => `${k}=`).join('\n') + '```' : null,
+      'After editing, redeploy with:',
+      '```git pull && docker compose up -d --build```',
+    ].filter(Boolean).join('\n'));
+  }
+
+  if (byKind.has('channel-perms')) {
+    const rows = byKind.get('channel-perms').map(i =>
+      `• **${i.channelLabel}** <#${i.channelId}> — ${i.detail}`
+    );
+    sections.push([
+      '**Channel permissions**',
+      'In **Server Settings → Channels → [each channel] → Permissions**, grant the bot (or the bot role):',
+      '• View Channel · Send Messages · Embed Links',
+      '• Manage Messages (only for the Admin Logs channel)',
+      '',
+      rows.join('\n'),
+    ].join('\n'));
+  }
+
+  if (byKind.has('channel-invalid')) {
+    const rows = byKind.get('channel-invalid').map(i =>
+      `• **${i.channelLabel}** (\`${i.envVar}\`) — ${i.detail}`
+    );
+    sections.push([
+      '**Channel IDs don\'t resolve**',
+      'Right-click each channel → **Copy Channel ID** and paste it into `.env`. Make sure the bot is in the same server.',
+      '',
+      rows.join('\n'),
+    ].join('\n'));
+  }
+
+  if (byKind.has('guild')) {
+    sections.push([
+      '**Guild unreachable**',
+      '• Right-click your server icon → **Copy Server ID** and set `GUILD_ID` in `.env`.',
+      '• Make sure the bot is still in the server (re-invite if it was kicked).',
+    ].join('\n'));
+  }
+
+  if (byKind.has('bot-member')) {
+    sections.push([
+      '**Bot member unavailable**',
+      'Re-invite the bot with the correct OAuth2 URL (scopes: `bot` + `applications.commands`, permissions include Manage Roles + Manage Messages).',
+    ].join('\n'));
+  }
+
+  if (byKind.has('manage-roles')) {
+    sections.push([
+      '**Bot lacks Manage Roles**',
+      'Go to **Server Settings → Roles → [Bot role]** and enable **Manage Roles**. Without it, faction swaps and Reset Roles will fail.',
+    ].join('\n'));
+  }
+
+  if (byKind.has('role-missing')) {
+    const rows = byKind.get('role-missing').map(i =>
+      `• \`${i.envVar}\` currently points to \`${i.roleId}\` (role not found)`
+    );
+    sections.push([
+      '**Faction role(s) not found**',
+      'Either the role was deleted or the ID in `.env` is wrong. Create the role in **Server Settings → Roles**, right-click → **Copy Role ID**, and update `.env`.',
+      '',
+      rows.join('\n'),
+    ].join('\n'));
+  }
+
+  if (byKind.has('role-hierarchy')) {
+    const rows = byKind.get('role-hierarchy').map(i =>
+      `• bot role **${i.botRoleName}** is not above **${i.roleName}**`
+    );
+    sections.push([
+      '**Bot role hierarchy**',
+      'Discord only lets a bot add/remove roles **below** its own highest role. In **Server Settings → Roles**, drag the bot role above every faction role.',
+      '',
+      rows.join('\n'),
+    ].join('\n'));
+  }
+
+  // Anything we didn't know how to auto-suggest
+  const handled = new Set([
+    'env', 'channel-perms', 'channel-invalid',
+    'guild', 'bot-member', 'manage-roles',
+    'role-missing', 'role-hierarchy',
+  ]);
+  const unknown = issues.filter(i => !handled.has(i.kind));
+  if (unknown.length) {
+    sections.push([
+      '**Other issues**',
+      unknown.map(i => `• ${i.label} — ${i.detail}${i.hint ? ` (${i.hint})` : ''}`).join('\n'),
+    ].join('\n'));
+  }
+
+  if (notes.length) {
+    sections.push(`ℹ️ ${notes.join(' · ')}`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle('🔧 Auto-fix suggestions')
+    .setDescription(sections.join('\n\n').slice(0, 4000))
+    .setFooter({ text: 'Re-run Healthcheck after applying fixes to verify.' })
+    .setTimestamp();
+
+  logger.info(`${interaction.user.tag} requested healthcheck auto-fix — ${issues.length} issue(s) across ${byKind.size} kind(s)`);
+
+  return interaction.editReply({ embeds: [embed] });
 }
 
 module.exports = {
@@ -270,5 +428,6 @@ module.exports = {
   handleAdminClearLogsConfirm,
   handleAdminClearLogsCancel,
   handleAdminClearLogs,
-  handleAdminHealthcheck
+  handleAdminHealthcheck,
+  handleAdminHealthcheckAutofix,
 };

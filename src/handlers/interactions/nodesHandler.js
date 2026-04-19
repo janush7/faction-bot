@@ -7,13 +7,22 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
 const logger = require('../../utils/logger');
 const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { THUMBNAIL_URL, DEFAULT_NODES } = require('../../config/constants');
 const { sendLog, findLastBotMessage } = require('./shared');
 const { saveNodesData, loadNodesData } = require('../../utils/nodesStore');
+const {
+  storePendingEdit,
+  consumePendingEdit,
+  restorePendingEdit,
+} = require('../../utils/pendingEdits');
+
+const PENDING_KIND = 'nodes';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -84,6 +93,10 @@ function showNodesModal(interaction, fields) {
 
 // ── Nodes Modal Submit ────────────────────────────────────────────────────────
 
+// Modal submit does NOT save directly. Instead, the parsed payload is stashed
+// in-memory keyed by a nonce and an ephemeral preview embed + Apply / Cancel
+// buttons is shown. The actual message edits run only when Apply is clicked.
+
 async function handleNodesModalSubmit(interaction) {
   await interaction.deferReply({ flags: 64 });
 
@@ -94,18 +107,74 @@ async function handleNodesModalSubmit(interaction) {
     { name: 'Arty',            value: interaction.fields.getTextInputValue('nodes_arty') || '—' }
   ];
 
-  saveNodesData(fields);
+  const previewEmbed = buildNodesEmbed(fields);
 
+  const nonce = storePendingEdit(PENDING_KIND, {
+    fields,
+    ownerId: interaction.user.id,
+  });
+
+  const buttonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`nodes_apply:${nonce}`)
+      .setLabel('Apply')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('✅'),
+    new ButtonBuilder()
+      .setCustomId(`nodes_cancel:${nonce}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('✖️')
+  );
+
+  return interaction.editReply({
+    content: '👀 **Preview** — check the node details below, then click **Apply** to publish or **Cancel** to discard.',
+    embeds: [previewEmbed],
+    components: [buttonsRow],
+  });
+}
+
+async function handleNodesApplyButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(PENDING_KIND, nonce);
+
+  if (!pending) {
+    await interaction.update({
+      content: '⏰ Preview expired or already used. Re-open **Edit Nodes** to try again.',
+      embeds: [],
+      components: [],
+    });
+    return false;
+  }
+  if (pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(PENDING_KIND, nonce, pending);
+    await interaction.reply({ content: '⛔ Only the admin who started this edit can Apply it.', flags: 64 });
+    return false;
+  }
+
+  const { fields } = pending;
   const updatedEmbed = buildNodesEmbed(fields);
   const channelIds   = getNodesChannelIds();
 
+  await interaction.update({
+    content: '⏳ Applying node edits…',
+    embeds: [updatedEmbed],
+    components: [],
+  });
+
   if (!channelIds.length) {
-    return interaction.editReply({ embeds: [createErrorEmbed('Config Error', 'NODES_CHANNELS is not set in .env.')] });
+    await interaction.editReply({
+      content: '',
+      embeds: [createErrorEmbed('Config Error', 'NODES_CHANNELS is not set in .env.')],
+      components: [],
+    });
+    return false;
   }
+
+  saveNodesData(fields);
 
   let edited = 0;
   let failed = 0;
-
   for (const channelId of channelIds) {
     try {
       const ch  = await interaction.client.channels.fetch(channelId);
@@ -137,7 +206,23 @@ async function handleNodesModalSubmit(interaction) {
   );
 
   return interaction.editReply({
-    embeds: [createSuccessEmbed('Nodes Updated', `Updated **${edited}** message(s).${failed ? `\n⚠️ ${failed} channel(s) had no existing NODES message.` : ''}`)]
+    content: '',
+    embeds: [createSuccessEmbed('Nodes Updated', `Updated **${edited}** message(s).${failed ? `\n⚠️ ${failed} channel(s) had no existing NODES message.` : ''}`)],
+    components: [],
+  });
+}
+
+async function handleNodesCancelButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(PENDING_KIND, nonce);
+  if (pending && pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(PENDING_KIND, nonce, pending);
+    return interaction.reply({ content: '⛔ Only the admin who started this edit can cancel it.', flags: 64 });
+  }
+  return interaction.update({
+    content: '❎ Nodes edit discarded.',
+    embeds: [],
+    components: [],
   });
 }
 
@@ -237,4 +322,10 @@ async function handleAdminEditNodes(interaction) {
   });
 }
 
-module.exports = { handleNodesModalSubmit, handleAdminPostNodes, handleAdminEditNodes };
+module.exports = {
+  handleNodesModalSubmit,
+  handleNodesApplyButton,
+  handleNodesCancelButton,
+  handleAdminPostNodes,
+  handleAdminEditNodes,
+};

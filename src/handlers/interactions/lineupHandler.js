@@ -20,6 +20,14 @@ const { createErrorEmbed, createSuccessEmbed } = require('../../utils/embeds');
 const { THUMBNAIL_URL } = require('../../config/constants');
 const { sendLog, findLastBotMessage } = require('./shared');
 const { saveLineupData, loadLineupData, saveServerData, loadServerData } = require('../../utils/lineupStore');
+const {
+  storePendingEdit,
+  consumePendingEdit,
+  restorePendingEdit,
+} = require('../../utils/pendingEdits');
+
+const CAPTION_KIND = 'lineup_caption';
+const SERVER_KIND  = 'lineup_server';
 
 function getServerDefaults(server) {
   if (server === 'S1') {
@@ -81,6 +89,7 @@ async function handleLineupEditCapButton(interaction) {
   await interaction.showModal(modal);
 }
 
+// Caption modal submit -> preview; actual edit runs on Apply.
 async function handleLineupCaptionSubmit(interaction) {
   const parts      = interaction.customId.split(':');
   const channelId  = parts[1];
@@ -88,18 +97,84 @@ async function handleLineupCaptionSubmit(interaction) {
   const server     = parts[3] || null; // S1 | S2 | null (legacy)
   const newCaption = interaction.fields.getTextInputValue('caption_text');
 
+  await interaction.deferReply({ flags: 64 });
+
+  let imageUrl = null;
+  let messageId = modalMessageId;
   try {
     const ch = await interaction.client.channels.fetch(channelId);
-
     const cached = loadLineupData(channelId, server);
-    const messageId = cached?.messageId ?? modalMessageId;
+    messageId = cached?.messageId ?? modalMessageId;
+    const oldMsg = await ch.messages.fetch(messageId);
+    imageUrl = oldMsg.embeds[0]?.image?.url ?? null;
+  } catch (err) {
+    logger.warn(`Lineup preview: could not load existing message ${modalMessageId}: ${err.message}`);
+  }
+
+  const previewEmbed = new EmbedBuilder()
+    .setColor(0x011327)
+    .setDescription(newCaption);
+  if (imageUrl) previewEmbed.setImage(imageUrl);
+
+  const nonce = storePendingEdit(CAPTION_KIND, {
+    channelId,
+    messageId,
+    server,
+    caption: newCaption,
+    ownerId: interaction.user.id,
+  });
+
+  const buttonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`lineup_caption_apply:${nonce}`)
+      .setLabel('Apply')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('\u2705'),
+    new ButtonBuilder()
+      .setCustomId(`lineup_caption_cancel:${nonce}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('\u2716\ufe0f')
+  );
+
+  return interaction.editReply({
+    content: '\ud83d\udc40 **Preview** \u2014 check the caption below, then click **Apply** to publish or **Cancel** to discard.',
+    embeds: [previewEmbed],
+    components: [buttonsRow],
+  });
+}
+
+async function handleLineupCaptionApplyButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(CAPTION_KIND, nonce);
+
+  if (!pending) {
+    await interaction.update({
+      content: '\u23f0 Preview expired or already used. Re-open **Edit Lineup Caption** to try again.',
+      embeds: [],
+      components: [],
+    });
+    return false;
+  }
+  if (pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(CAPTION_KIND, nonce, pending);
+    await interaction.reply({ content: '\u26d4 Only the admin who started this edit can Apply it.', flags: 64 });
+    return false;
+  }
+
+  const { channelId, messageId, server, caption: newCaption } = pending;
+
+  await interaction.update({
+    content: '\u23f3 Applying caption edit\u2026',
+    embeds: [],
+    components: [],
+  });
+
+  try {
+    const ch = await interaction.client.channels.fetch(channelId);
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
-
-    // Re-upload the image as a fresh file so the embed keeps its `attachment://`
-    // claim; otherwise Discord detaches it and renders it outside the embed.
-    const imageUrl = old.image?.url;
-    logger.info(`Editing lineup ${messageId} (${server || 'legacy'}): image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
+    const imageUrl = old?.image?.url;
 
     const updated = EmbedBuilder.from(old);
     updated.setDescription(newCaption);
@@ -109,7 +184,6 @@ async function handleLineupCaptionSubmit(interaction) {
       const res = await fetch(imageUrl);
       if (!res.ok) throw new Error(`Failed to download lineup image: ${res.status}`);
       const buffer = Buffer.from(await res.arrayBuffer());
-
       updated.setImage('attachment://lineup.png');
       await oldMsg.edit({
         embeds:      [updated],
@@ -123,11 +197,34 @@ async function handleLineupCaptionSubmit(interaction) {
     saveLineupData(channelId, messageId, newCaption, server);
 
     logger.info(`${interaction.user.tag} updated lineup caption to: ${newCaption}`);
-    await interaction.reply({ content: `\u2705 Caption updated to: **${newCaption}**`, flags: 64 });
+    await interaction.editReply({
+      content: `\u2705 Caption updated to: **${newCaption}**`,
+      embeds: [],
+      components: [],
+    });
   } catch (err) {
     logger.error('Failed to edit lineup caption:', err);
-    await interaction.reply({ content: '\u274c Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
+    await interaction.editReply({
+      content: '\u274c Could not edit the message. It may be too old or I lack permissions.',
+      embeds: [],
+      components: [],
+    });
+    return false;
   }
+}
+
+async function handleLineupCaptionCancelButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(CAPTION_KIND, nonce);
+  if (pending && pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(CAPTION_KIND, nonce, pending);
+    return interaction.reply({ content: '\u26d4 Only the admin who started this edit can cancel it.', flags: 64 });
+  }
+  return interaction.update({
+    content: '\u274e Caption edit discarded.',
+    embeds: [],
+    components: [],
+  });
 }
 
 // ── Edit Server Button (from Post Server ephemeral reply) ─────────────────────
@@ -185,6 +282,18 @@ async function handleLineupEditServerButton(interaction) {
 
 // ── Server Details Modal Submit ───────────────────────────────────────────────
 
+function buildServerDetailsEmbed(server, name, password) {
+  return new EmbedBuilder()
+    .setTitle(server ? `Server Details (${server})` : 'Server Details')
+    .setColor(0x011327)
+    .setThumbnail(THUMBNAIL_URL)
+    .addFields(
+      { name: '\ud83d\udccc Server Name', value: name,     inline: true },
+      { name: '\ud83d\udd12 Password',    value: password, inline: true }
+    );
+}
+
+// Server Details modal submit -> preview; actual edit runs on Apply.
 async function handleServerModalSubmit(interaction) {
   const parts     = interaction.customId.split(':');
   const channelId = parts[1];
@@ -193,32 +302,101 @@ async function handleServerModalSubmit(interaction) {
   const newName   = interaction.fields.getTextInputValue('server_name');
   const newPass   = interaction.fields.getTextInputValue('server_password');
 
+  await interaction.deferReply({ flags: 64 });
+
+  const previewEmbed = buildServerDetailsEmbed(server, newName, newPass);
+
+  const nonce = storePendingEdit(SERVER_KIND, {
+    channelId,
+    messageId,
+    server,
+    name: newName,
+    password: newPass,
+    ownerId: interaction.user.id,
+  });
+
+  const buttonsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`lineup_server_apply:${nonce}`)
+      .setLabel('Apply')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('\u2705'),
+    new ButtonBuilder()
+      .setCustomId(`lineup_server_cancel:${nonce}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('\u2716\ufe0f')
+  );
+
+  return interaction.editReply({
+    content: '\ud83d\udc40 **Preview** \u2014 check the server details below, then click **Apply** to publish or **Cancel** to discard.',
+    embeds: [previewEmbed],
+    components: [buttonsRow],
+  });
+}
+
+async function handleServerApplyButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(SERVER_KIND, nonce);
+
+  if (!pending) {
+    await interaction.update({
+      content: '\u23f0 Preview expired or already used. Re-open **Edit Server Details** to try again.',
+      embeds: [],
+      components: [],
+    });
+    return false;
+  }
+  if (pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(SERVER_KIND, nonce, pending);
+    await interaction.reply({ content: '\u26d4 Only the admin who started this edit can Apply it.', flags: 64 });
+    return false;
+  }
+
+  const { channelId, messageId, server, name: newName, password: newPass } = pending;
+  const updated = buildServerDetailsEmbed(server, newName, newPass);
+
+  await interaction.update({
+    content: '\u23f3 Applying server-details edit\u2026',
+    embeds: [updated],
+    components: [],
+  });
+
   try {
     const ch  = await interaction.client.channels.fetch(channelId);
     const msg = await ch.messages.fetch(messageId);
-
-    const updated = new EmbedBuilder()
-      .setTitle(server ? `Server Details (${server})` : 'Server Details')
-      .setColor(0x011327)
-      .setThumbnail(THUMBNAIL_URL)
-      .addFields(
-        { name: '\ud83d\udccc Server Name', value: newName, inline: true },
-        { name: '\ud83d\udd12 Password',    value: newPass, inline: true }
-      );
-
     await msg.edit({ embeds: [updated] });
-
     saveServerData(channelId, messageId, newName, newPass, server);
 
     logger.info(`${interaction.user.tag} updated ${server || 'legacy'} server details: ${newName} / ${newPass}`);
-    await interaction.reply({
+    await interaction.editReply({
       content: `\u2705 Server details updated${server ? ` for **${server}**` : ''}!\n**Server Name:** ${newName}\n**Password:** ${newPass}`,
-      flags: 64
+      embeds: [],
+      components: [],
     });
   } catch (err) {
     logger.error('Failed to edit server details:', err);
-    await interaction.reply({ content: '\u274c Could not edit the message. It may be too old or I lack permissions.', flags: 64 });
+    await interaction.editReply({
+      content: '\u274c Could not edit the message. It may be too old or I lack permissions.',
+      embeds: [],
+      components: [],
+    });
+    return false;
   }
+}
+
+async function handleServerCancelButton(interaction) {
+  const nonce   = interaction.customId.split(':')[1] || '';
+  const pending = consumePendingEdit(SERVER_KIND, nonce);
+  if (pending && pending.ownerId !== interaction.user.id) {
+    restorePendingEdit(SERVER_KIND, nonce, pending);
+    return interaction.reply({ content: '\u26d4 Only the admin who started this edit can cancel it.', flags: 64 });
+  }
+  return interaction.update({
+    content: '\u274e Server details edit discarded.',
+    embeds: [],
+    components: [],
+  });
 }
 
 // ── Admin: Post Server Details (panel button) ─────────────────────────────────
@@ -403,8 +581,12 @@ async function handleAdminEditServer(interaction, serverOverride) {
 module.exports = {
   handleLineupEditCapButton,
   handleLineupCaptionSubmit,
+  handleLineupCaptionApplyButton,
+  handleLineupCaptionCancelButton,
   handleLineupEditServerButton,
   handleServerModalSubmit,
+  handleServerApplyButton,
+  handleServerCancelButton,
   handleAdminPostServer,
   handleAdminEditCaption,
   handleAdminEditServer
