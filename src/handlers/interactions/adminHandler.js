@@ -233,7 +233,7 @@ async function handleAdminHealthcheck(interaction) {
   await interaction.deferUpdate();
 
   const guildId = process.env.GUILD_ID;
-  const { passed, total, issues } = await runHealthcheck(interaction.client, guildId);
+  const { passed, total, issues, notes = [] } = await runHealthcheck(interaction.client, guildId);
 
   const allGood = issues.length === 0;
   const color   = allGood ? 0x2ecc71 : 0xe67e22;
@@ -241,19 +241,24 @@ async function handleAdminHealthcheck(interaction) {
     ? `✅ Healthcheck — ${passed}/${total} checks passed`
     : `⚠️ Healthcheck — ${passed}/${total} checks passed`;
 
-  const description = allGood
-    ? 'All systems nominal.'
-    : issues.slice(0, 20)
-        .map(i => `• **${i.label}** — ${i.detail}`)
-        .join('\n') + (issues.length > 20 ? `\n…and ${issues.length - 20} more.` : '');
+  const issueLines = issues.slice(0, 20).map(i => {
+    const head = `• **${i.label}** — ${i.detail}`;
+    return i.hint ? `${head}\n  ↳ ${i.hint}` : head;
+  });
+  if (issues.length > 20) issueLines.push(`…and ${issues.length - 20} more.`);
+
+  const parts = [];
+  if (allGood) parts.push('All systems nominal.');
+  else parts.push(issueLines.join('\n'));
+  if (notes.length) parts.push(`ℹ️ ${notes.join(' · ')}`);
 
   const embed = new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
-    .setDescription(description || '—')
+    .setDescription(parts.join('\n\n') || '—')
     .setTimestamp();
 
-  logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s)`);
+  logger.info(`${interaction.user.tag} ran healthcheck — ${passed}/${total} passed, ${issues.length} issue(s), ${notes.length} note(s)`);
 
   return interaction.followUp({ embeds: [embed], flags: 64 });
 }

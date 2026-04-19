@@ -49,4 +49,18 @@ function loadRotationMsgId(channelId) {
   return _read(MSG_PATH)[channelId] ?? null;
 }
 
-module.exports = { saveRotationRaw, loadRotationRaw, saveRotationMsgId, loadRotationMsgId };
+function clearRotationMsgId(channelId) {
+  const store = _read(MSG_PATH);
+  if (store[channelId] === undefined) return false;
+  delete store[channelId];
+  _write(MSG_PATH, store);
+  return true;
+}
+
+module.exports = {
+  saveRotationRaw,
+  loadRotationRaw,
+  saveRotationMsgId,
+  loadRotationMsgId,
+  clearRotationMsgId,
+};

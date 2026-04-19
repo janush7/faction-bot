@@ -46,6 +46,15 @@ function loadLineupData(channelId, server) {
   return _read(LINEUP_PATH)[_lineupKey(channelId, server)] ?? null;
 }
 
+function clearLineupData(channelId, server) {
+  const store = _read(LINEUP_PATH);
+  const key = _lineupKey(channelId, server);
+  if (store[key] === undefined) return false;
+  delete store[key];
+  _write(LINEUP_PATH, store);
+  return true;
+}
+
 // ── Server details cache ──────────────────────────────────────────────────────
 // Keyed by `${channelId}:${server}` when `server` ('S1' | 'S2') is provided,
 // otherwise by plain `channelId`.
@@ -64,4 +73,20 @@ function loadServerData(channelId, server) {
   return _read(SERVER_PATH)[_serverKey(channelId, server)] ?? null;
 }
 
-module.exports = { saveLineupData, loadLineupData, saveServerData, loadServerData };
+function clearServerData(channelId, server) {
+  const store = _read(SERVER_PATH);
+  const key = _serverKey(channelId, server);
+  if (store[key] === undefined) return false;
+  delete store[key];
+  _write(SERVER_PATH, store);
+  return true;
+}
+
+module.exports = {
+  saveLineupData,
+  loadLineupData,
+  clearLineupData,
+  saveServerData,
+  loadServerData,
+  clearServerData,
+};
