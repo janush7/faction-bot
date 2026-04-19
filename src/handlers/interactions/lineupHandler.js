@@ -37,7 +37,7 @@ async function handleLineupEditCapButton(interaction) {
     try {
       const ch  = await interaction.client.channels.fetch(channelId);
       const msg = await ch.messages.fetch(messageId);
-      currentCaption = msg.embeds[0]?.footer?.text ?? currentCaption;
+      currentCaption = msg.embeds[0]?.description ?? msg.embeds[0]?.footer?.text ?? currentCaption;
       saveLineupData(channelId, messageId, currentCaption, server);
     } catch (_) {}
   }
@@ -54,7 +54,7 @@ async function handleLineupEditCapButton(interaction) {
         .setLabel('Caption')
         .setStyle(TextInputStyle.Short)
         .setValue(currentCaption)
-        .setMaxLength(100)
+        .setMaxLength(200)
         .setRequired(true)
     )
   );
@@ -89,7 +89,9 @@ async function handleLineupCaptionSubmit(interaction) {
     logger.info(`Editing lineup ${messageId} (${server || 'legacy'}): image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
 
     const updated = EmbedBuilder.from(old);
-    updated.setFooter({ text: newCaption });
+    updated.setDescription(newCaption);
+    // Clear legacy footer if it existed (caption now lives in description)
+    updated.setFooter(null);
 
     if (imageUrl) {
       const res = await fetch(imageUrl);
@@ -284,7 +286,7 @@ async function handleAdminEditCaption(interaction) {
           .setLabel('Caption')
           .setStyle(TextInputStyle.Short)
           .setValue(cached.caption)
-          .setMaxLength(100)
+          .setMaxLength(200)
           .setRequired(true)
       )
     );
@@ -309,7 +311,7 @@ async function handleAdminEditCaption(interaction) {
     });
   }
 
-  const caption = msg.embeds[0]?.footer?.text ?? 'Midweek Frontline \u2013 Lineup \u2013 ';
+  const caption = msg.embeds[0]?.description ?? msg.embeds[0]?.footer?.text ?? 'Midweek Frontline \u2013 Lineup \u2013 ';
   saveLineupData(channelId, msg.id, caption, server);
 
   await interaction.editReply({
