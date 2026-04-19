@@ -4,12 +4,12 @@ A Discord bot for **Midweek Frontline** — handles faction selection (Allies / 
 
 ## Features
 
-- **Choose Your Side** — persistent embed with Allies 🔵 / Axis 🔴 buttons that assign roles
+- **Choose Your Side** — persistent embed with Allies S1 / Axis S1 / Allies S2 / Axis S2 buttons that assign roles (one faction at a time across both servers)
 - **Lineup Posting** (`/lineup`) — upload a pre-made lineup image with auto-calculated Discord timestamps for the next Wednesday
 - **Server Details** (`/server`) — post server name & password to a dedicated channel
 - **In-place Editing** (`/edit`) — edit the caption of the last lineup or the server details without re-posting
 - **Admin Panel** (`/panel`) — reset roles, reload faction embed, clear logs
-- **Weekly Auto-Reset** — automatically removes all Allies/Axis roles every Wednesday at 22:00 Warsaw time
+- **Weekly Auto-Reset** — automatically removes all Allies/Axis (S1 + S2) roles every Wednesday at 22:00 Warsaw time
 - **Custom Emojis** — ALLIES and AXIS emojis are auto-uploaded to the server on startup
 - No database required — fully stateless
 
@@ -38,8 +38,10 @@ nano .env
 | `CLIENT_ID` | ✅ | Bot application ID |
 | `GUILD_ID` | ✅ | Your server (guild) ID |
 | `CHANNEL_ID` | ✅ | Channel where the faction embed is posted |
-| `ALLIES_ROLE` | ✅ | Role ID for the Allies faction |
-| `AXIS_ROLE` | ✅ | Role ID for the Axis faction |
+| `ALLIES_ROLE` | ✅ | Role ID for the Allies S1 faction |
+| `AXIS_ROLE` | ✅ | Role ID for the Axis S1 faction |
+| `ALLIES_S2_ROLE` | ✅ | Role ID for the Allies S2 faction |
+| `AXIS_S2_ROLE` | ✅ | Role ID for the Axis S2 faction |
 | `ADMIN_LOG_CHANNEL` | ✅ | Channel ID for admin & faction selection logs |
 | `LINEUP_CHANNEL` | ✅ | Channel ID where lineups are posted |
 | `SERVER_DETAILS_CHANNEL` | ✅ | Channel ID where server details are posted |
@@ -134,7 +136,7 @@ Finds the **last bot message** in the relevant channel and opens a modal to edit
 
 Use `/panel` (administrators only) to access:
 
-- 🔄 **Reset Roles** — removes Allies/Axis roles from all server members immediately
+- 🔄 **Reset Roles** — removes all Allies/Axis (S1 + S2) roles from every member immediately
 - 📋 **Reload Embed** — deletes previous bot embeds from `CHANNEL_ID` and posts a fresh "Choose your side!" embed
 - 🧹 **Clear Logs** — bulk-deletes all messages from `ADMIN_LOG_CHANNEL`
 
@@ -145,7 +147,7 @@ All admin actions are logged to `ADMIN_LOG_CHANNEL`.
 ## Weekly Auto-Reset
 
 Every **Wednesday at 22:00 Warsaw time**, the bot automatically:
-1. Removes ALLIES and AXIS roles from all server members
+1. Removes all ALLIES/AXIS S1 and S2 roles from every member
 2. Logs the result (members affected, any errors) to `ADMIN_LOG_CHANNEL`
 
 Configurable via `RESET_DAY` and `RESET_HOUR` in `.env`.

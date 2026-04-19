@@ -18,6 +18,7 @@ const logger = require('../../utils/logger');
 const { createFactionEmbed, createSuccessEmbed, createErrorEmbed } = require('../../utils/embeds');
 const { createFactionButtons } = require('../../utils/buttons');
 const { sendLog, bulkDeleteFiltered, batchRoleRemove } = require('./shared');
+const { getAllFactionRoleIds } = require('../../config/factions');
 
 // ── Admin: Reset Confirmation ─────────────────────────────────────────────────
 
@@ -57,16 +58,15 @@ async function handleAdminReset(interaction) {
     components: []
   });
 
-  const alliesRoleId = process.env.ALLIES_ROLE;
-  const axisRoleId   = process.env.AXIS_ROLE;
-  const guild        = interaction.guild;
+  const factionRoleIds = getAllFactionRoleIds();
+  const guild          = interaction.guild;
 
   let totalCount  = 0;
   let totalErrors = [];
 
   await guild.members.fetch();
 
-  for (const roleId of [alliesRoleId, axisRoleId].filter(Boolean)) {
+  for (const roleId of factionRoleIds) {
     const role = guild.roles.cache.get(roleId);
     if (!role) continue;
     const membersWithRole = [...role.members.values()];

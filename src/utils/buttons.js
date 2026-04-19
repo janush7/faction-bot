@@ -1,28 +1,24 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder } = require('discord.js');
 const emojiState = require('./emojiState');
+const { FACTIONS } = require('../config/factions');
+
+function resolveEmoji(faction) {
+  const customId = emojiState[faction.emoji];
+  return customId
+    ? { id: customId, name: faction.emoji }
+    : { name: faction.fallbackEmoji };
+}
 
 function createFactionButtons() {
-  const alliesEmoji = emojiState.ALLIES
-    ? { id: emojiState.ALLIES, name: 'ALLIES' }
-    : { name: '🔵' };
+  const buttons = Object.values(FACTIONS).map(faction =>
+    new ButtonBuilder()
+      .setCustomId(`faction_${faction.key}`)
+      .setLabel(faction.label)
+      .setStyle(faction.style)
+      .setEmoji(resolveEmoji(faction))
+  );
 
-  const axisEmoji = emojiState.AXIS
-    ? { id: emojiState.AXIS, name: 'AXIS' }
-    : { name: '🔴' };
-
-  const alliesButton = new ButtonBuilder()
-    .setCustomId('faction_allies')
-    .setLabel('Allies')
-    .setStyle(ButtonStyle.Primary)
-    .setEmoji(alliesEmoji);
-
-  const axisButton = new ButtonBuilder()
-    .setCustomId('faction_axis')
-    .setLabel('Axis')
-    .setStyle(ButtonStyle.Danger)
-    .setEmoji(axisEmoji);
-
-  return new ActionRowBuilder().addComponents(alliesButton, axisButton);
+  return new ActionRowBuilder().addComponents(buttons);
 }
 
 module.exports = { createFactionButtons };
