@@ -176,7 +176,7 @@ function buildMonthEvents(year, month, startMap, weekday, hour, minute) {
     idx = (idx + 1) % MAP_CYCLE.length;
   }
 
-  return { text: lines.join('\n'), nextMap: MAP_CYCLE[idx] };
+  return { text: lines.join('\n\n'), nextMap: MAP_CYCLE[idx] };
 }
 
 /**
