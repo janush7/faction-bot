@@ -1,20 +1,36 @@
 /**
- * healthcheck.js — Runs a suite of probes against the live Discord state
- * and returns a structured report for the admin panel.
+ * healthcheck.js — Runs probes against the live Discord state and returns a
+ * structured report for the admin panel.
+ *
+ * Design goals:
+ *   • Only flag things the admin can actually act on.
+ *   • Silently self-heal stale pointers (cache rows whose Discord message
+ *     got deleted) — the panel status row already shows 🔴 for those, and
+ *     a stale pointer is purely cosmetic once cleared.
+ *   • Each issue carries a short `hint` the admin can follow.
  *
  * Checks:
- *   • Every required env var is set.
- *   • Every configured channel ID resolves to a reachable channel.
- *   • The bot has the permissions it needs on each channel.
- *   • Every configured role ID resolves to a role on the guild.
- *   • Cached message IDs (faction/lineup/server/rotation/nodes) still
- *     exist on Discord.
+ *   1. Required env vars are set.
+ *   2. Every configured channel resolves and the bot has View + Send + Embed
+ *      Links on it (Manage Messages on the log channel).
+ *   3. Bot has guild-level `Manage Roles` (needed for Reset Roles and faction
+ *      swaps).
+ *   4. Each faction role exists AND the bot's highest role sits above it —
+ *      otherwise Discord rejects role add/remove even with Manage Roles.
+ *   5. Stale cache self-heal: drop any Lineup/Server/Rotation cache entry
+ *      whose referenced Discord message no longer exists, and report how
+ *      many entries were cleared (info-level, not a failure).
  */
 
 const { PermissionFlagsBits } = require('discord.js');
-const { loadLineupData, loadServerData } = require('./lineupStore');
-const { loadRotationMsgId } = require('./rotationStore');
-const { getAllFactionRoleIds } = require('../config/factions');
+const {
+  loadLineupData,
+  clearLineupData,
+  loadServerData,
+  clearServerData,
+} = require('./lineupStore');
+const { loadRotationMsgId, clearRotationMsgId } = require('./rotationStore');
+const { getAllFactionRoleIds, getFaction } = require('../config/factions');
 
 const REQUIRED_ENV_VARS = [
   'GUILD_ID',
@@ -25,9 +41,6 @@ const REQUIRED_ENV_VARS = [
   'NODES_CHANNELS',
 ];
 
-// Channels the bot posts messages to. Minimum required perms: View + Send
-// + Embed Links. Log channel additionally needs Manage Messages for the
-// clear-log flow to work.
 const CHANNEL_CHECKS = [
   { envVar: 'FACTION_CHANNEL',        label: 'Faction',        needsManage: false, multiple: false },
   { envVar: 'LINEUP_CHANNEL',         label: 'Lineup',         needsManage: false, multiple: false },
@@ -36,6 +49,13 @@ const CHANNEL_CHECKS = [
   { envVar: 'NODES_CHANNELS',         label: 'Nodes',          needsManage: false, multiple: true  },
   { envVar: 'ADMIN_LOG_CHANNEL',      label: 'Admin Logs',     needsManage: true,  multiple: false, optional: true },
 ];
+
+function permName(flag) {
+  for (const [k, v] of Object.entries(PermissionFlagsBits)) {
+    if (v === flag) return k;
+  }
+  return 'Unknown';
+}
 
 function baseChannelPerms(needsManage) {
   const perms = [
@@ -57,46 +77,65 @@ async function checkChannelAccess(client, channelId, needsManage) {
     if (!perms) return { ok: false, reason: 'permissions unavailable' };
     const missing = baseChannelPerms(needsManage).filter(p => !perms.has(p));
     if (missing.length) {
-      const names = missing.map(p => {
-        for (const [k, v] of Object.entries(PermissionFlagsBits)) {
-          if (v === p) return k;
-        }
-        return 'Unknown';
-      });
-      return { ok: false, reason: `missing perms: ${names.join(', ')}` };
+      return { ok: false, reason: `missing perms: ${missing.map(permName).join(', ')}` };
     }
-    return { ok: true, channelName: channel.name };
+    return { ok: true };
   } catch (e) {
     return { ok: false, reason: `fetch failed (${e.code ?? e.message})` };
   }
 }
 
-async function checkRole(guild, roleId) {
+async function messageExists(client, channelId, messageId) {
+  if (!channelId || !messageId) return null; // nothing to check
   try {
-    const role = await guild.roles.fetch(roleId).catch(() => null);
-    return role ? { ok: true, name: role.name } : { ok: false, reason: 'role not found' };
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return false;
+    const msg = await channel.messages.fetch(messageId).catch(() => null);
+    return Boolean(msg);
   } catch (_) {
-    return { ok: false, reason: 'fetch failed' };
+    return false;
   }
 }
 
-async function checkCachedMessage(client, channelId, messageId) {
-  if (!channelId || !messageId) return { ok: true, skipped: true };
-  try {
-    const channel = await client.channels.fetch(channelId);
-    if (!channel) return { ok: false, reason: 'channel missing' };
-    const msg = await channel.messages.fetch(messageId).catch(() => null);
-    return msg ? { ok: true } : { ok: false, reason: 'cached message deleted on Discord' };
-  } catch (_) {
-    return { ok: false, reason: 'fetch failed' };
+async function healStaleCache(client) {
+  let cleared = 0;
+  const lineupCh = process.env.LINEUP_CHANNEL;
+  const serverCh = process.env.SERVER_DETAILS_CHANNEL;
+  const rotationCh = process.env.MAP_ROTATION_CHANNEL;
+
+  if (lineupCh) {
+    for (const s of ['S1', 'S2']) {
+      const data = loadLineupData(lineupCh, s);
+      if (!data?.messageId) continue;
+      const exists = await messageExists(client, lineupCh, data.messageId);
+      if (exists === false && clearLineupData(lineupCh, s)) cleared++;
+    }
   }
+  if (serverCh) {
+    for (const s of ['S1', 'S2']) {
+      const data = loadServerData(serverCh, s);
+      if (!data?.messageId) continue;
+      const exists = await messageExists(client, serverCh, data.messageId);
+      if (exists === false && clearServerData(serverCh, s)) cleared++;
+    }
+  }
+  if (rotationCh) {
+    const msgId = loadRotationMsgId(rotationCh);
+    if (msgId) {
+      const exists = await messageExists(client, rotationCh, msgId);
+      if (exists === false && clearRotationMsgId(rotationCh)) cleared++;
+    }
+  }
+  return cleared;
 }
 
 /**
- * Runs every probe and returns { passed, total, issues: [{ label, detail }] }.
+ * Runs every probe. Returns `{ passed, total, issues: [{ label, detail, hint }], notes: [string] }`.
+ * `notes` is free-form informational output (e.g. "cleared 2 stale cache entries").
  */
 async function runHealthcheck(client, guildId) {
   const issues = [];
+  const notes = [];
   let total = 0;
   let passed = 0;
 
@@ -104,8 +143,15 @@ async function runHealthcheck(client, guildId) {
   for (const key of REQUIRED_ENV_VARS) {
     total++;
     const v = process.env[key];
-    if (v && String(v).trim() !== '') passed++;
-    else issues.push({ label: `env: ${key}`, detail: 'missing or empty' });
+    if (v && String(v).trim() !== '') {
+      passed++;
+    } else {
+      issues.push({
+        label: `env: ${key}`,
+        detail: 'missing or empty',
+        hint: `set ${key} in .env and restart the bot`,
+      });
+    }
   }
 
   // 2. Channels + permissions
@@ -128,66 +174,86 @@ async function runHealthcheck(client, guildId) {
       passed++;
     } else {
       const where = channelId ? ` <#${channelId}>` : '';
-      issues.push({ label: `channel: ${cfg.label}${where}`, detail: result.reason });
+      issues.push({
+        label: `channel: ${cfg.label}${where}`,
+        detail: result.reason,
+        hint: result.reason.startsWith('missing perms')
+          ? 'grant the missing permissions to the bot on this channel'
+          : 'verify the channel ID and that the bot is in the server',
+      });
     }
   }
 
-  // 3. Faction roles
+  // 3. Guild-level Manage Roles (needed for Reset Roles and faction swaps)
   let guild = null;
   try { guild = await client.guilds.fetch(guildId); } catch (_) { /* handled below */ }
+
+  total++;
+  if (!guild) {
+    issues.push({
+      label: 'guild',
+      detail: 'guild unreachable',
+      hint: 'check GUILD_ID and that the bot is still in the server',
+    });
+  } else {
+    const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+    if (!me) {
+      issues.push({
+        label: 'guild: bot member',
+        detail: 'could not fetch bot member',
+        hint: 're-invite the bot with the `bot` + `applications.commands` scopes',
+      });
+    } else if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      issues.push({
+        label: 'guild: Manage Roles',
+        detail: 'bot lacks Manage Roles permission',
+        hint: 'grant Manage Roles in the server role settings — Reset Roles and faction swaps will fail without it',
+      });
+    } else {
+      passed++;
+    }
+  }
+
+  // 4. Faction roles exist + bot role above them
   const roleIds = getAllFactionRoleIds();
+  const botHighest = guild?.members?.me?.roles?.highest ?? null;
   for (const rid of roleIds) {
     total++;
     if (!guild) {
-      issues.push({ label: `role: ${rid}`, detail: 'guild unreachable' });
+      issues.push({ label: `role: ${rid}`, detail: 'guild unreachable', hint: 'see guild issue above' });
       continue;
     }
-    const r = await checkRole(guild, rid);
-    if (r.ok) passed++;
-    else issues.push({ label: `role: ${rid}`, detail: r.reason });
-  }
-
-  // 4. Cached message integrity
-  const cachedChecks = [];
-  const factionCh = process.env.FACTION_CHANNEL;
-  const lineupCh = process.env.LINEUP_CHANNEL;
-  const serverCh = process.env.SERVER_DETAILS_CHANNEL;
-  const rotationCh = process.env.MAP_ROTATION_CHANNEL;
-
-  if (lineupCh) {
-    for (const s of ['S1', 'S2']) {
-      const data = loadLineupData(lineupCh, s);
-      cachedChecks.push({ label: `cached: Lineup ${s}`, channelId: lineupCh, messageId: data?.messageId });
+    const role = await guild.roles.fetch(rid).catch(() => null);
+    if (!role) {
+      const f = getFaction(rid);
+      const pretty = f ? `${f.name} - ${f.server}` : rid;
+      issues.push({
+        label: `role: ${pretty}`,
+        detail: 'role not found',
+        hint: `create the role and update its ID in .env (current: ${rid})`,
+      });
+      continue;
     }
-  }
-  if (serverCh) {
-    for (const s of ['S1', 'S2']) {
-      const data = loadServerData(serverCh, s);
-      cachedChecks.push({ label: `cached: Server ${s}`, channelId: serverCh, messageId: data?.messageId });
+    if (botHighest && botHighest.comparePositionTo(role) <= 0) {
+      issues.push({
+        label: `role: ${role.name}`,
+        detail: `bot role (${botHighest.name}) is not above this role`,
+        hint: 'move the bot role higher in the server role list — Discord rejects role add/remove when the bot sits at or below the target role',
+      });
+      continue;
     }
-  }
-  if (rotationCh) {
-    cachedChecks.push({
-      label: 'cached: Map Rotation',
-      channelId: rotationCh,
-      messageId: loadRotationMsgId(rotationCh),
-    });
-  }
-  // Faction embed is posted without a persisted ID — its presence is
-  // already exercised by the panel's probeFaction; no cached-id check here.
-  void factionCh;
-
-  const cachedResults = await Promise.all(
-    cachedChecks.map(async c => ({ ...c, result: await checkCachedMessage(client, c.channelId, c.messageId) }))
-  );
-  for (const { label, result } of cachedResults) {
-    total++;
-    if (result.skipped) { total--; continue; } // nothing stored → not a failure
-    if (result.ok) passed++;
-    else issues.push({ label, detail: result.reason });
+    passed++;
   }
 
-  return { passed, total, issues };
+  // 5. Stale cache self-heal (silent; reported as a note, not a failure)
+  try {
+    const cleared = await healStaleCache(client);
+    if (cleared > 0) {
+      notes.push(`cleared ${cleared} stale cache pointer(s) (message had been deleted on Discord)`);
+    }
+  } catch (_) { /* non-fatal */ }
+
+  return { passed, total, issues, notes };
 }
 
 module.exports = { runHealthcheck };
