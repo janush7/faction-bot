@@ -77,20 +77,13 @@ async function handleLineupCaptionSubmit(interaction) {
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
 
-    // Discord resolves `attachment://lineup.png` to a CDN URL when the
-    // embed is fetched via API, and reports attachments=0 (the file is
-    // "claimed" internally). Editing the embed with the CDN URL causes
-    // Discord to decouple the image from the embed.
-    //
-    // Fix: download the image from the CDN URL, re-upload it as a fresh
-    // file via `files`, and set the embed's image back to
-    // `attachment://lineup.png`. This re-establishes the claim.
+    // Re-upload the image as a fresh file so the embed keeps its `attachment://`
+    // claim; otherwise Discord detaches it and renders it outside the embed.
     const imageUrl = old.image?.url;
     logger.info(`Editing lineup ${messageId} (${server || 'legacy'}): image=${imageUrl}, attachments=${oldMsg.attachments.size}`);
 
     const updated = EmbedBuilder.from(old);
     updated.setDescription(newCaption);
-    // Clear legacy footer if it existed (caption now lives in description)
     updated.setFooter(null);
 
     if (imageUrl) {
@@ -125,12 +118,10 @@ async function handleLineupEditServerButton(interaction) {
   const channelId = parts[1];
   const messageId = parts[2];
 
-  // Try cache first (instant, no API calls)
   const cached = loadServerData(channelId);
   let currentName = cached?.serverName     ?? process.env.SERVER_NAME     ?? 'HCIA EU 1';
   let currentPass = cached?.serverPassword ?? process.env.SERVER_PASSWORD ?? 'MWFTIME';
 
-  // If no cache or different message, try fetching
   if (!cached || cached.messageId !== messageId) {
     try {
       const ch     = await interaction.client.channels.fetch(channelId);
@@ -194,7 +185,6 @@ async function handleServerModalSubmit(interaction) {
 
     await msg.edit({ embeds: [updated] });
 
-    // Update cache
     saveServerData(channelId, messageId, newName, newPass);
 
     logger.info(`${interaction.user.tag} updated server details: ${newName} / ${newPass}`);
@@ -238,7 +228,6 @@ async function handleAdminPostServer(interaction) {
 
   const serverMsg = await channel.send({ embeds: [serverEmbed] });
 
-  // Save to cache
   saveServerData(channel.id, serverMsg.id, serverName, serverPassword);
 
   logger.info(`${interaction.user.tag} posted server details to #${channel.name}`);
@@ -266,7 +255,6 @@ async function handleAdminPostServer(interaction) {
 }
 
 // ── Admin: Edit Lineup Caption (panel button) ─────────────────────────────────
-// Accepts server tag from button customId: admin_edit_caption:S1 or admin_edit_caption:S2
 
 async function handleAdminEditCaption(interaction) {
   const server    = interaction.customId.split(':')[1] || null; // S1 | S2 | null
@@ -294,7 +282,6 @@ async function handleAdminEditCaption(interaction) {
     return interaction.showModal(modal);
   }
 
-  // No cache \u2014 scan channel for the most recent lineup with an image
   await interaction.deferReply({ flags: 64 });
 
   const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
@@ -320,12 +307,10 @@ async function handleAdminEditCaption(interaction) {
 }
 
 // ── Admin: Edit Server Details (panel button) ─────────────────────────────────
-// Uses cache to avoid channel scan before showModal() (3-second timeout).
 
 async function handleAdminEditServer(interaction) {
   const channelId = process.env.SERVER_DETAILS_CHANNEL || interaction.channelId;
 
-  // Try cache first \u2014 instant, no API calls before showModal()
   const cached = loadServerData(channelId);
   if (cached) {
     const modal = new ModalBuilder()
@@ -356,7 +341,6 @@ async function handleAdminEditServer(interaction) {
     return interaction.showModal(modal);
   }
 
-  // No cache \u2014 scan channel, save for next click, tell user to retry
   await interaction.deferReply({ flags: 64 });
 
   const ch = await interaction.client.channels.fetch(channelId).catch(() => null);

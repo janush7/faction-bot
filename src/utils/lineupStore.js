@@ -29,9 +29,8 @@ function _write(filePath, data) {
 }
 
 // ── Lineup caption cache ─────────────────────────────────────────────────────
-// `server` is optional ('S1' | 'S2'). When provided, data is keyed as
-// `${channelId}:${server}` so each server's lineup is cached independently.
-// Falls back to plain `channelId` for backward compat with old data.
+// Keyed by `${channelId}:${server}` when `server` ('S1' | 'S2') is provided,
+// otherwise by plain `channelId`.
 
 function _lineupKey(channelId, server) {
   return server ? `${channelId}:${server}` : channelId;

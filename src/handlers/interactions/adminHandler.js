@@ -1,11 +1,5 @@
 /**
  * adminHandler.js — Handles admin panel button interactions.
- *
- * Fixes applied:
- *  1. admin_reload now only deletes the faction embed (title === 'Choose your side!')
- *     instead of every bot embed in the channel.
- *  2. handleAdminReset removes roles in batches of 5 with 500ms delays to avoid
- *     hitting Discord's rate limiter when many members need to be updated.
  */
 
 const {

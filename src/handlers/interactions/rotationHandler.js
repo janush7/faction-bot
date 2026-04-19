@@ -131,7 +131,6 @@ async function handleRotationModalSubmit(interaction) {
 
     await msg.edit({ embeds: [embed], content: null });
 
-    // Persist raw input for round-trip editing.
     saveRotationRaw(messageId, { month1Header, month1Events: month1Raw, month2Header, month2Events: month2Raw });
 
     logger.info(`${interaction.user.tag} updated Map Rotation in #${ch.name}`);
@@ -203,9 +202,6 @@ async function handleAdminPostRotation(interaction) {
 // ── Admin: Edit Map Rotation (panel button) ───────────────────────────────────
 
 async function handleAdminEditRotation(interaction) {
-  // IMPORTANT: Discord requires showModal() within 3 seconds.
-  // Load everything from /tmp/ (instant) — no async Discord API calls before modal.
-
   const channelId = getMapRotationChannelId();
   if (!channelId) {
     return interaction.reply({
@@ -214,12 +210,9 @@ async function handleAdminEditRotation(interaction) {
     });
   }
 
-  // Load stored message ID from /tmp/ — no Discord API calls needed.
   let storedMsgId = loadRotationMsgId(channelId);
 
   if (!storedMsgId) {
-    // Fallback: scan channel for existing rotation embed (happens after bot restart).
-    // This is async, but only runs once when /tmp/ is empty (e.g. after restart).
     await interaction.deferReply({ flags: 64 });
     const ch = await interaction.client.channels.fetch(channelId).catch(() => null);
     if (ch) {
@@ -227,8 +220,6 @@ async function handleAdminEditRotation(interaction) {
       if (found) {
         storedMsgId = found.id;
         saveRotationMsgId(channelId, found.id);
-        // Recover field data from the embed so the edit modal shows current values
-        // instead of empty defaults after a container restart.
         const fields = found.embeds[0]?.fields ?? [];
         if (fields.length >= 2) {
           saveRotationRaw(found.id, {
@@ -245,13 +236,11 @@ async function handleAdminEditRotation(interaction) {
         content: '❌ No Map Rotation message found. Post one first using **Post Rotation**.',
       });
     }
-    // Re-open modal after deferred reply isn't possible — inform user instead.
     return interaction.editReply({
       embeds: [createSuccessEmbed('Ready', 'Message found! Please click **Edit Rotation** again to open the editor.')]
     });
   }
 
-  // Load persisted raw data from /tmp/ (also instant).
   const data = loadRotationRaw(storedMsgId) ?? getDefaultRotationData();
 
   const modal = new ModalBuilder()
