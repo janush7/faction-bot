@@ -8,38 +8,71 @@ const TIMES = {
   gameStart:      { h: 20, m: 0  },
 };
 
-function getWarsawOffsetMs(date) {
-  const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const warsaw = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
-  return utc - warsaw;
+// Returns the UTC offset for Europe/Warsaw at the given moment, in hours.
+// DST-aware via Intl; works regardless of the server's local time zone.
+function getWarsawOffsetHours(date) {
+  const utcMs    = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' })).getTime();
+  const warsawMs = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' })).getTime();
+  return Math.round((warsawMs - utcMs) / 3_600_000);
+}
+
+// Converts a Warsaw-local wall-clock (Y/M/D/h/m) to a Unix seconds timestamp,
+// correctly handling DST transitions. Identical approach to rotationCycle's
+// warsawToUnix — must not rely on the process's local time zone.
+function warsawToUnix(year, month /* 0-11 */, day, hour, minute) {
+  const probe       = new Date(Date.UTC(year, month, day, hour, minute, 0));
+  const offsetHours = getWarsawOffsetHours(probe);
+  const utcHour     = hour - offsetHours;
+  return Math.floor(Date.UTC(year, month, day, utcHour, minute, 0) / 1000);
+}
+
+// Returns Warsaw-local Y/M/D/weekday/hour/minute for the given moment.
+function warsawParts(date) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Warsaw',
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+    hour:     '2-digit',
+    minute:   '2-digit',
+    weekday:  'short',
+    hour12:   false,
+  });
+  const parts = Object.fromEntries(
+    fmt.formatToParts(date).filter(p => p.type !== 'literal').map(p => [p.type, p.value])
+  );
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    year:    parseInt(parts.year,   10),
+    month:   parseInt(parts.month,  10) - 1, // 0-11
+    day:     parseInt(parts.day,    10),
+    weekday: weekdayMap[parts.weekday] ?? 0,
+    hour:    parseInt(parts.hour,   10),
+    minute:  parseInt(parts.minute, 10),
+  };
 }
 
 function getNextWednesdayTimestamps() {
   const now = new Date();
-  const warsawNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Warsaw' }));
-  const day = warsawNow.getDay();
-  const hour = warsawNow.getHours();
+  const { year, month, day, weekday, hour } = warsawParts(now);
 
-  let daysUntilWed = (3 - day + 7) % 7;
+  let daysUntilWed = (3 - weekday + 7) % 7;
   if (daysUntilWed === 0 && hour >= 20) daysUntilWed = 7;
 
-  const base = new Date(warsawNow);
-  base.setDate(warsawNow.getDate() + daysUntilWed);
-  base.setSeconds(0);
-  base.setMilliseconds(0);
+  // Compute target Warsaw-local calendar date by advancing the day field.
+  // Date.UTC handles month/year rollover for us.
+  const target = new Date(Date.UTC(year, month, day + daysUntilWed, 0, 0, 0));
+  const tgtY = target.getUTCFullYear();
+  const tgtM = target.getUTCMonth();
+  const tgtD = target.getUTCDate();
 
-  base.setHours(TIMES.matchPositions.h, TIMES.matchPositions.m);
-  const matchUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
+  const matchUnix = warsawToUnix(tgtY, tgtM, tgtD, TIMES.matchPositions.h, TIMES.matchPositions.m);
+  const slUnix    = warsawToUnix(tgtY, tgtM, tgtD, TIMES.slBriefing.h,     TIMES.slBriefing.m);
+  const startUnix = warsawToUnix(tgtY, tgtM, tgtD, TIMES.gameStart.h,      TIMES.gameStart.m);
 
-  base.setHours(TIMES.slBriefing.h, TIMES.slBriefing.m);
-  const slUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
-
-  base.setHours(TIMES.gameStart.h, TIMES.gameStart.m);
-  const startUnix = Math.floor((base.getTime() + getWarsawOffsetMs(base)) / 1000);
-
-  const dd = String(base.getDate()).padStart(2, '0');
-  const mm = String(base.getMonth() + 1).padStart(2, '0');
-  const yy = String(base.getFullYear()).slice(2);
+  const dd = String(tgtD).padStart(2, '0');
+  const mm = String(tgtM + 1).padStart(2, '0');
+  const yy = String(tgtY).slice(2);
   const dateLabel = `${dd}.${mm}.${yy}`;
 
   return { matchUnix, slUnix, startUnix, dateLabel };

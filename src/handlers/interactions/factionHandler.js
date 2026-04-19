@@ -124,15 +124,25 @@ async function handleFactionSelection(interaction, factionKey) {
     slotAcquired = true;
 
     // Remove any other faction role(s) the user currently holds — one faction
-    // at a time across all servers.
+    // at a time across all servers. Must succeed before adding the new role;
+    // otherwise a partial failure would leave the user with multiple faction
+    // roles (e.g. Allies S1 + Axis S1), which violates the one-faction invariant.
     const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
     const rolesToRemove = otherFactionRoleIds.filter(id => member.roles.cache.has(id));
     let switched = false;
     if (rolesToRemove.length) {
       switched = true;
-      await member.roles.remove(rolesToRemove, 'Switching faction').catch(e =>
-        logger.warn(`Could not remove previous faction role(s) from ${interaction.user.tag}: ${e.message}`)
-      );
+      try {
+        await member.roles.remove(rolesToRemove, 'Switching faction');
+      } catch (err) {
+        logger.warn(`Could not remove previous faction role(s) from ${interaction.user.tag}: ${err.message}`);
+        return interaction.editReply({
+          embeds: [createErrorEmbed(
+            'Could not switch faction',
+            'I could not remove your previous faction role. Ask an admin to check my role permissions and role hierarchy, then try again.'
+          )],
+        });
+      }
     }
 
     await member.roles.add(selectedRoleId);
