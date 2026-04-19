@@ -16,6 +16,14 @@ const { getFaction, getFactionRoleId, getAllFactionRoleIds } = require('../../co
 // Resets on process restart — fine for this use case.
 const lastSwapAtMs = new Map();
 
+// Synchronous guard against two overlapping swap handlers for the same user.
+// A double-click on different faction buttons can enter handleFactionSelection
+// twice before the first finishes; the cooldown timestamp alone can't stop
+// the second call from seeing a stale `lastSwapAtMs`. This Set is checked
+// and mutated synchronously, before any `await`, so the second call is
+// rejected immediately.
+const swapInProgress = new Set();
+
 function cooldownSeconds() {
   const raw = parseInt(process.env.FACTION_SWAP_COOLDOWN_SECONDS ?? '20', 10);
   return Number.isFinite(raw) && raw >= 0 ? raw : 20;
@@ -45,12 +53,15 @@ async function handleFactionSelection(interaction, factionKey) {
     return interaction.reply({ content: `⚠️ You are already on **${factionLabel}**!`, flags: 64 });
   }
 
-  // Anti-spam: enforce per-user cooldown between faction swaps.
-  // Write the timestamp before any `await` so a rapid second interaction
-  // from the same user sees the updated guard and is rejected.
-  const cdSec = cooldownSeconds();
+  // Anti-spam: enforce per-user cooldown between faction swaps. The cooldown
+  // only burns when the swap actually succeeds — otherwise a failed Discord
+  // API call would lock the user out for the full cooldown for no reason.
+  // Concurrent double-clicks are blocked by swapInProgress.
+  const cdSec  = cooldownSeconds();
+  const userId = interaction.user.id;
+
   if (cdSec > 0) {
-    const last = lastSwapAtMs.get(interaction.user.id) ?? 0;
+    const last = lastSwapAtMs.get(userId) ?? 0;
     const elapsedSec = Math.floor((Date.now() - last) / 1000);
     if (elapsedSec < cdSec) {
       const waitSec = cdSec - elapsedSec;
@@ -59,41 +70,54 @@ async function handleFactionSelection(interaction, factionKey) {
         flags: 64
       });
     }
-    lastSwapAtMs.set(interaction.user.id, Date.now());
   }
 
-  // Remove any other faction role(s) the user currently holds — one faction
-  // at a time across all servers.
-  const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
-  const rolesToRemove = otherFactionRoleIds.filter(id => member.roles.cache.has(id));
-  let switched = false;
-  if (rolesToRemove.length) {
-    switched = true;
-    await member.roles.remove(rolesToRemove, 'Switching faction').catch(e =>
-      logger.warn(`Could not remove previous faction role(s) from ${interaction.user.tag}: ${e.message}`)
-    );
+  if (swapInProgress.has(userId)) {
+    return interaction.reply({
+      content: '⏳ A faction swap is already in progress for you. Try again in a moment.',
+      flags: 64
+    });
   }
+  swapInProgress.add(userId);
 
-  await member.roles.add(selectedRoleId);
-  logger.info(`${interaction.user.tag} joined ${factionLabel}`);
+  try {
+    // Remove any other faction role(s) the user currently holds — one faction
+    // at a time across all servers.
+    const otherFactionRoleIds = getAllFactionRoleIds().filter(id => id !== selectedRoleId);
+    const rolesToRemove = otherFactionRoleIds.filter(id => member.roles.cache.has(id));
+    let switched = false;
+    if (rolesToRemove.length) {
+      switched = true;
+      await member.roles.remove(rolesToRemove, 'Switching faction').catch(e =>
+        logger.warn(`Could not remove previous faction role(s) from ${interaction.user.tag}: ${e.message}`)
+      );
+    }
 
-  const logEmbed = new EmbedBuilder()
-    .setColor(faction.color)
-    .setTitle(`${factionLabel} — Faction Selected`)
-    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
-    .addFields(
-      { name: '👤 User',      value: `<@${interaction.user.id}>`, inline: true },
-      { name: '🏳️ Faction',  value: factionLabel,                inline: true },
-      { name: '🔄 Switched',  value: switched ? 'Yes' : 'No',    inline: true }
-    )
-    .setTimestamp();
+    await member.roles.add(selectedRoleId);
+    // Only burn the cooldown on a successful swap.
+    if (cdSec > 0) lastSwapAtMs.set(userId, Date.now());
+    logger.info(`${interaction.user.tag} joined ${factionLabel}`);
 
-  await sendLog(interaction.client, logEmbed);
+    const logEmbed = new EmbedBuilder()
+      .setColor(faction.color)
+      .setTitle(`${factionLabel} — Faction Selected`)
+      .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: '👤 User',      value: `<@${interaction.user.id}>`, inline: true },
+        { name: '🏳️ Faction',  value: factionLabel,                inline: true },
+        { name: '🔄 Switched',  value: switched ? 'Yes' : 'No',    inline: true }
+      )
+      .setTimestamp();
 
-  return interaction.reply({
-    content: `✅ You have joined **${factionLabel}**! Good luck on the battlefield!`,
-    flags: 64
-  });
+    await sendLog(interaction.client, logEmbed);
+
+    return interaction.reply({
+      content: `✅ You have joined **${factionLabel}**! Good luck on the battlefield!`,
+      flags: 64
+    });
+  } finally {
+    swapInProgress.delete(userId);
+  }
 }
 
 module.exports = { handleFactionSelection };

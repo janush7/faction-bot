@@ -41,7 +41,7 @@ const {
   handleAdminClearLogs,
   handleAdminHealthcheck
 } = require('../handlers/interactions/adminHandler');
-const { buildPanelPayload, refreshPanelMessage } = require('../commands/admin/panel');
+const { refreshPanelMessage } = require('../commands/admin/panel');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Runs the underlying handler and records the admin action in the lastAction
@@ -244,7 +244,10 @@ module.exports = {
         return await handleFactionSelection(interaction, factionKey);
       }
 
-      // ── Admin buttons ─────────────────────────────────────────────────────
+      // ── Admin buttons (ephemeral confirm dialogs for destructive ops) ─────
+      // All other admin controls live in the panel dropdowns; these two
+      // customIds are created by handleAdminResetConfirm / handleAdminClearLogsConfirm
+      // as inline Confirm/Cancel buttons on an ephemeral reply.
       if (customId.startsWith('admin_')) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({
@@ -253,7 +256,6 @@ module.exports = {
           });
         }
 
-        if (customId === 'admin_reset')              return await handleAdminResetConfirm(interaction);
         if (customId === 'admin_reset_confirm') {
           return await trackAction(
             interaction,
@@ -262,14 +264,6 @@ module.exports = {
           );
         }
         if (customId === 'admin_reset_cancel')       return await handleAdminResetCancel(interaction);
-        if (customId === 'admin_reload') {
-          return await trackAction(
-            interaction,
-            'Reload Faction Embed',
-            () => handleAdminReload(interaction),
-          );
-        }
-        if (customId === 'admin_clearlogs')          return await handleAdminClearLogsConfirm(interaction);
         if (customId === 'admin_clearlogs_confirm') {
           return await trackAction(
             interaction,
@@ -278,36 +272,6 @@ module.exports = {
           );
         }
         if (customId === 'admin_clearlogs_cancel')   return await handleAdminClearLogsCancel(interaction);
-        if (customId === 'admin_refresh') {
-          await interaction.deferUpdate();
-          const payload = await buildPanelPayload(interaction.client, interaction.guildId);
-          return await interaction.editReply(payload);
-        }
-        if (customId.startsWith('admin_post_server')) {
-          return await trackAction(
-            interaction,
-            'Post Server Details',
-            () => handleAdminPostServer(interaction),
-          );
-        }
-        if (customId.startsWith('admin_edit_caption')) return await handleAdminEditCaption(interaction);
-        if (customId.startsWith('admin_edit_server')) return await handleAdminEditServer(interaction);
-        if (customId === 'admin_post_nodes') {
-          return await trackAction(
-            interaction,
-            'Post Nodes',
-            () => handleAdminPostNodes(interaction),
-          );
-        }
-        if (customId === 'admin_edit_nodes')      return await handleAdminEditNodes(interaction);
-        if (customId === 'admin_post_rotation') {
-          return await trackAction(
-            interaction,
-            'Post Map Rotation',
-            () => handleAdminPostRotation(interaction),
-          );
-        }
-        if (customId === 'admin_edit_rotation')   return await handleAdminEditRotation(interaction);
       }
 
       // ── Rotation preview Apply / Cancel (own namespace) ───────────────────
