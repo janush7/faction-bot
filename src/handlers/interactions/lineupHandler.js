@@ -26,10 +26,12 @@ const { saveLineupData, loadLineupData, saveServerData, loadServerData } = requi
 async function handleLineupEditCapButton(interaction) {
   const parts     = interaction.customId.split(':');
   const channelId = parts[1];
-  const messageId = parts[2];
+  const buttonMessageId = parts[2];
 
-  // Try cache first (instant, no API calls)
+  // The button's message ID may be stale after a delete+repost caption edit.
+  // Prefer the cached ID (always points to the current lineup message).
   const cached = loadLineupData(channelId);
+  const messageId = cached?.messageId ?? buttonMessageId;
   let currentCaption = cached?.caption ?? 'Midweek Frontline – Lineup – ';
 
   // If no cache or different message, try fetching (low risk — single API call)
@@ -64,11 +66,15 @@ async function handleLineupEditCapButton(interaction) {
 async function handleLineupCaptionSubmit(interaction) {
   const parts      = interaction.customId.split(':');
   const channelId  = parts[1];
-  const messageId  = parts[2];
+  const modalMessageId = parts[2];
   const newCaption = interaction.fields.getTextInputValue('caption_text');
 
   try {
-    const ch     = await interaction.client.channels.fetch(channelId);
+    const ch = await interaction.client.channels.fetch(channelId);
+
+    // Prefer cached message ID in case the modal was opened with a stale one.
+    const cached = loadLineupData(channelId);
+    const messageId = cached?.messageId ?? modalMessageId;
     const oldMsg = await ch.messages.fetch(messageId);
     const old    = oldMsg.embeds[0];
     const existingAttachment = oldMsg.attachments.first();
@@ -83,15 +89,20 @@ async function handleLineupCaptionSubmit(interaction) {
     // Edit-in-place reliably breaks the embed→attachment link on Discord's
     // side: the image either vanishes or renders as a standalone preview
     // above the embed. Instead, delete the old message and send a fresh one
-    // with the same image and the new caption. Identical layout to the
-    // original `/lineup` post, which we know renders correctly.
+    // with the same image and the new caption. Download the image to a
+    // Buffer first so Discord treats it as a brand-new upload (passing a
+    // CDN URL directly still caused duplication).
     if (existingAttachment) {
       const attachmentName = existingAttachment.name || 'lineup.png';
       updated.setImage(`attachment://${attachmentName}`);
 
+      const res = await fetch(existingAttachment.url);
+      if (!res.ok) throw new Error(`Failed to download attachment: ${res.status}`);
+      const buffer = Buffer.from(await res.arrayBuffer());
+
       const newMsg = await ch.send({
         embeds: [updated],
-        files: [{ attachment: existingAttachment.url, name: attachmentName }]
+        files: [{ attachment: buffer, name: attachmentName }]
       });
 
       await oldMsg.delete().catch(e =>
